@@ -1,163 +1,475 @@
-local function MakeTab(def)
-    local sideBtn = makeSideItem(def.icon, def.name or "Tab")
-    sideBtn.Parent = sidebar
+-- SyniXLib.lua v0.3.2
+-- Sidebar UI (B/W), tabs, sections, toggles, buttons
+-- - Optional floating launcher with corner-snap (stores _G.SyniXLauncherPos)
+-- - One window at a time (opens new, closes previous)
+print("[SyniXLib] loaded v0.3.2")
 
-    -- container próprio desta aba (fica dentro de "content")
-    local page = Instance.new("ScrollingFrame")
-    page.BackgroundTransparency = 1
-    page.Position = UDim2.new(0, 10, 0, 44)
-    page.Size = UDim2.new(1, -20, 1, -54)
-    page.ScrollBarThickness = 6
-    page.Visible = false
-    page.Parent = content
-    local pageList = Instance.new("UIListLayout", page)
-    pageList.Padding = UDim.new(0,8)
-    pageList.SortOrder = Enum.SortOrder.LayoutOrder
-    pageList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        page.CanvasSize = UDim2.new(0,0,0,pageList.AbsoluteContentSize.Y + 8)
+local Players = game:GetService("Players")
+local UIS     = game:GetService("UserInputService")
+local Tween   = game:GetService("TweenService")
+
+local Lib = {}
+Lib.__index = Lib
+
+-- state
+Lib._launcherGui = nil
+Lib._launcherBtn = nil
+Lib._currentGui  = nil
+Lib._lastOpts    = nil
+
+-- ========= THEME =========
+local DEFAULT_THEME = {
+    bg_window   = Color3.fromRGB(14,15,20),
+    bg_header   = Color3.fromRGB(20,21,28),
+    bg_panel    = Color3.fromRGB(18,19,26),
+    bg_sidebar  = Color3.fromRGB(16,17,24),
+    card        = Color3.fromRGB(24,25,34),
+    row         = Color3.fromRGB(28,30,40),
+    stroke      = Color3.fromRGB(255,255,255),
+    text        = Color3.fromRGB(238,240,248),
+    text_muted  = Color3.fromRGB(200,205,220),
+    toggle_on   = Color3.fromRGB(245,245,245),
+    toggle_off  = Color3.fromRGB(60,62,70),
+    knob_on     = Color3.fromRGB(22,24,32),
+    knob_off    = Color3.fromRGB(235,238,245),
+
+    sidebarWidth = 200,
+    rowHeight    = 48,
+    toggleSize   = Vector2.new(84,30),
+    knobSize     = Vector2.new(26,26),
+
+    winSize      = UDim2.fromOffset(680,400),
+}
+
+-- ========= utils =========
+local function merge(a,b)
+    local t = {}
+    for k,v in pairs(a or {}) do t[k]=v end
+    for k,v in pairs(b or {}) do t[k]=v end
+    return t
+end
+
+local function enableDrag(frame, clampToScreen)
+    frame.Active = true
+    local dragging, startPos, startMouse
+    local function mousePos()
+        local m = UIS:GetMouseLocation()
+        return Vector2.new(m.X, m.Y)
+    end
+    frame.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            dragging, startPos, startMouse = true, frame.AbsolutePosition, mousePos()
+            i.Changed:Connect(function()
+                if i.UserInputState==Enum.UserInputState.End then dragging=false end
+            end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if not dragging then return end
+        if i.UserInputType~=Enum.UserInputType.MouseMovement and i.UserInputType~=Enum.UserInputType.Touch then return end
+        local delta = mousePos() - startMouse
+        local pos   = startPos + delta
+        if clampToScreen and frame.Parent then
+            pos = Vector2.new(
+                math.clamp(pos.X, 0, math.max(0, frame.Parent.AbsoluteSize.X - frame.AbsoluteSize.X)),
+                math.clamp(pos.Y, 0, math.max(0, frame.Parent.AbsoluteSize.Y - frame.AbsoluteSize.Y))
+            )
+        end
+        frame.Position = UDim2.fromOffset(pos.X, pos.Y)
+    end)
+end
+
+-- corner snap for launcher
+local function snapToCorner(btn)
+    local parent = btn.Parent
+    if not parent then return end
+    local sz = parent.AbsoluteSize
+    local p  = btn.AbsolutePosition
+    local w,h = btn.AbsoluteSize.X, btn.AbsoluteSize.Y
+    local m = 14
+    local corners = {
+        Vector2.new(m, m),
+        Vector2.new(sz.X - w - m, m),
+        Vector2.new(m, sz.Y - h - m),
+        Vector2.new(sz.X - w - m, sz.Y - h - m),
+    }
+    local here = Vector2.new(p.X, p.Y)
+    local best, bestDist = corners[1], math.huge
+    for _,c in ipairs(corners) do
+        local d = (here - c).Magnitude
+        if d < bestDist then best, bestDist = c, d end
+    end
+    Tween:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Position = UDim2.fromOffset(best.X, best.Y)}):Play()
+    _G.SyniXLauncherPos = UDim2.fromOffset(best.X, best.Y)
+end
+
+-- ensure single launcher
+local function ensureLauncher()
+    if Lib._launcherBtn and Lib._launcherBtn.Parent then return end
+    local player = Players.LocalPlayer
+    local gui = Lib._launcherGui
+    if not gui or not gui.Parent then
+        gui = Instance.new("ScreenGui")
+        gui.Name = "SyniX_LauncherRoot"
+        gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
+        gui.Parent = player:WaitForChild("PlayerGui")
+        Lib._launcherGui = gui
+    end
+
+    local launcher = Instance.new("ImageButton")
+    launcher.Name = "Launcher"
+    launcher.Image = "rbxassetid://14862323455"
+    launcher.Size = UDim2.fromOffset(56,56)
+    launcher.Position = _G.SyniXLauncherPos or UDim2.new(0, 14, 1, -72)
+    launcher.BackgroundColor3 = Color3.fromRGB(26,28,36)
+    launcher.BorderSizePixel = 0
+    Instance.new("UICorner", launcher).CornerRadius = UDim.new(1,0)
+    local s = Instance.new("UIStroke", launcher); s.Transparency = 0.45; s.Color = Color3.fromRGB(255,255,255)
+    launcher.Parent = gui
+    enableDrag(launcher, true)
+
+    launcher.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            snapToCorner(launcher)
+        end
     end)
 
-    -- helpers desta aba usam o "page" privado (não o pageScroll global)
-    local function TAddSection(text)
-        local s = Instance.new("TextLabel", page)
-        s.BackgroundTransparency = 1
-        s.Text = text
-        s.Font = Enum.Font.GothamBold
-        s.TextXAlignment = Enum.TextXAlignment.Left
-        s.TextColor3 = theme.text
-        s.TextScaled = true
-        s.Size = UDim2.new(1,0,0,24)
-        Instance.new("UITextSizeConstraint", s).MaxTextSize = 16
-        return s
-    end
-
-    local function TAddToggle(iconId, labelText, default, callback)
-        local row = Instance.new("Frame", page)
-        row.Size = UDim2.new(1, 0, 0, theme.rowHeight)
-        row.BackgroundColor3 = theme.row
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
-
-        local ico = Instance.new("ImageLabel", row)
-        ico.BackgroundTransparency = 1
-        ico.Image = iconId or "rbxassetid://14862323455"
-        ico.Size = UDim2.fromOffset(18,18)
-        ico.Position = UDim2.new(0, 12, 0.5, -9)
-        ico.ImageColor3 = Color3.fromRGB(235,235,240)
-
-        local label = Instance.new("TextLabel", row)
-        label.BackgroundTransparency = 1
-        label.Text = string.upper(labelText or "TOGGLE")
-        label.Font = Enum.Font.GothamSemibold
-        label.TextColor3 = theme.text
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.TextScaled = true
-        label.Position = UDim2.new(0, 36, 0, 2)
-        label.Size = UDim2.new(1, - (theme.toggleSize.X + 70), 1, -4)
-        Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
-
-        local btn = Instance.new("TextButton", row)
-        btn.Text = ""
-        btn.AutoButtonColor = false
-        btn.Size = UDim2.fromOffset(theme.toggleSize.X, theme.toggleSize.Y)
-        btn.Position = UDim2.new(1, -(theme.toggleSize.X + 12), 0.5, -math.floor(theme.toggleSize.Y/2))
-        btn.BackgroundColor3 = theme.toggle_off
-        btn.ClipsDescendants = true
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
-
-        local knob = Instance.new("Frame", btn)
-        knob.Size = UDim2.fromOffset(theme.knobSize.X, theme.knobSize.Y)
-        knob.Position = UDim2.new(0, 2, 0.5, -math.floor(theme.knobSize.Y/2))
-        knob.BackgroundColor3 = theme.knob_off
-        Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-        local kS = Instance.new("UIStroke", knob); kS.Transparency = 0.7; kS.Color = Color3.fromRGB(0,0,0)
-
-        local offX = 2
-        local onX  = math.max(2, theme.toggleSize.X - theme.knobSize.X - 2)
-
-        local value = default and true or false
-        local function paint(v)
-            if v then
-                Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_on}):Play()
-                Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Position = UDim2.new(0, onX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_on}):Play()
-            else
-                Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_off}):Play()
-                Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Position = UDim2.new(0, offX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_off}):Play()
-            end
+    launcher.MouseButton1Click:Connect(function()
+        if Lib._currentGui and Lib._currentGui.Parent then
+            Lib._currentGui:Destroy()
+            Lib._currentGui = nil
         end
-        paint(value)
+        if Lib._lastOpts then
+            Lib:_spawnWindow(Lib._lastOpts)
+        end
+    end)
 
-        btn.MouseButton1Click:Connect(function()
-            value = not value
-            paint(value)
-            if callback then task.spawn(function() pcall(callback, value) end) end
-        end)
+    Lib._launcherBtn = launcher
+end
 
-        return {
-            Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
-            Get=function() return value end
-        }
+-- ========= window build =========
+function Lib:_spawnWindow(opts)
+    local player = Players.LocalPlayer
+    local theme = merge(DEFAULT_THEME, (opts and opts.theme) or {})
+    if opts and opts.size then theme.winSize = opts.size end
+
+    -- one window at a time
+    if Lib._currentGui and Lib._currentGui.Parent then
+        Lib._currentGui:Destroy()
+        Lib._currentGui = nil
     end
 
-    local function TAddButton(iconId, text, callback)
-        local row = Instance.new("TextButton", page)
-        row.Text = ""
-        row.Size = UDim2.new(1, 0, 0, 44)
-        row.BackgroundColor3 = theme.card
-        row.AutoButtonColor = true
-        Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "SyniX_Window"
+    gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
+    gui.Parent = player:WaitForChild("PlayerGui")
+    Lib._currentGui = gui
+    Lib._lastOpts = opts
 
-        local ico = Instance.new("ImageLabel", row)
-        ico.BackgroundTransparency = 1
-        ico.Image = iconId or "rbxassetid://14862323455"
-        ico.Size = UDim2.fromOffset(18,18)
-        ico.Position = UDim2.new(0, 12, 0.5, -9)
-        ico.ImageColor3 = Color3.fromRGB(235,235,240)
+    local win = Instance.new("Frame")
+    win.Name = "Window"
+    win.Size = theme.winSize
+    win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
+    win.BackgroundColor3 = theme.bg_window
+    win.Visible = true
+    Instance.new("UICorner", win).CornerRadius = UDim.new(0,14)
+    local wS = Instance.new("UIStroke", win); wS.Color=theme.stroke; wS.Transparency=0.15
+    win.Parent = gui
+    enableDrag(win, true)
 
-        local lbl = Instance.new("TextLabel", row)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = text or "BUTTON"
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextColor3 = theme.text
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextScaled = true
-        lbl.Position = UDim2.new(0, 36, 0, 0)
-        lbl.Size = UDim2.new(1, -36, 1, 0)
-        Instance.new("UITextSizeConstraint", lbl).MaxTextSize = 16
+    -- header
+    local header = Instance.new("Frame")
+    header.Parent = win
+    header.BackgroundColor3 = theme.bg_header
+    header.Size = UDim2.new(1, -16, 0, 46)
+    header.Position = UDim2.new(0, 8, 0, 8)
+    header.BorderSizePixel = 0
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0,10)
 
-        row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
+    local hIcon = Instance.new("ImageLabel", header)
+    hIcon.BackgroundTransparency = 1
+    hIcon.Image = "rbxassetid://14862323455"
+    hIcon.Size = UDim2.fromOffset(22,22)
+    hIcon.Position = UDim2.new(0, 10, 0.5, -11)
+
+    local hTitle = Instance.new("TextLabel", header)
+    hTitle.BackgroundTransparency = 1
+    hTitle.Text = (opts and opts.title) or "SyniX Hub | Free"
+    hTitle.Font = Enum.Font.GothamBold
+    hTitle.TextScaled = true
+    hTitle.TextXAlignment = Enum.TextXAlignment.Left
+    hTitle.TextColor3 = theme.text
+    hTitle.Position = UDim2.new(0, 40, 0, 4)
+    hTitle.Size = UDim2.new(1, -150, 1, -8)
+    Instance.new("UITextSizeConstraint", hTitle).MaxTextSize = 20
+
+    local function mkHeadBtn(txt)
+        local b = Instance.new("TextButton")
+        b.BackgroundColor3 = theme.card
+        b.Text = txt
+        b.TextScaled = true
+        b.Font = Enum.Font.GothamBold
+        b.TextColor3 = theme.text
+        b.AutoButtonColor = true
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
+        return b
+    end
+    local btnMin = mkHeadBtn("-"); btnMin.Parent = header; btnMin.Size = UDim2.fromOffset(32,26); btnMin.Position = UDim2.new(1,-74,0.5,-13)
+    local btnCls = mkHeadBtn("X"); btnCls.Parent = header; btnCls.Size = UDim2.fromOffset(32,26); btnCls.Position = UDim2.new(1,-38,0.5,-13)
+
+    local body = Instance.new("Frame", win)
+    body.BackgroundTransparency = 1
+    body.Position = UDim2.new(0, 8, 0, 60)
+    body.Size = UDim2.new(1, -16, 1, -68)
+
+    local sidebar = Instance.new("Frame", body)
+    sidebar.BackgroundColor3 = theme.bg_sidebar
+    sidebar.Size = UDim2.new(0, theme.sidebarWidth, 1, 0)
+    sidebar.Position = UDim2.new(0, 0, 0, 0)
+    Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,10)
+    local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
+    local sList = Instance.new("UIListLayout", sidebar)
+    sList.Padding = UDim.new(0,6); sList.SortOrder = Enum.SortOrder.LayoutOrder
+
+    local content = Instance.new("Frame", body)
+    content.BackgroundColor3 = theme.bg_panel
+    content.Size = UDim2.new(1, -(theme.sidebarWidth+10), 1, 0)
+    content.Position = UDim2.new(0, theme.sidebarWidth+10, 0, 0)
+    Instance.new("UICorner", content).CornerRadius = UDim.new(0,10)
+    local cS = Instance.new("UIStroke", content); cS.Transparency=0.85; cS.Color=theme.stroke
+
+    local pageTitle = Instance.new("TextLabel", content)
+    pageTitle.BackgroundTransparency = 1
+    pageTitle.Text = "| Home"
+    pageTitle.Font = Enum.Font.GothamBlack
+    pageTitle.TextColor3 = theme.text
+    pageTitle.TextScaled = true
+    pageTitle.TextXAlignment = Enum.TextXAlignment.Left
+    pageTitle.Position = UDim2.new(0, 12, 0, 8)
+    pageTitle.Size = UDim2.new(1, -24, 0, 28)
+    Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
+
+    -- ===== Tabs system (each tab owns its ScrollingFrame) =====
+    local function makeSideItem(iconId, text)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -12, 0, 40)
+        btn.Position = UDim2.new(0, 6, 0, 0)
+        btn.BackgroundColor3 = theme.card
+        btn.AutoButtonColor = false
+        btn.Text = ""
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+
+        local ic = Instance.new("ImageLabel", btn)
+        ic.BackgroundTransparency = 1
+        ic.Image = iconId or "rbxassetid://14862323455"
+        ic.Size = UDim2.fromOffset(18,18)
+        ic.Position = UDim2.new(0, 10, 0.5, -9)
+        ic.ImageColor3 = Color3.fromRGB(230,230,235)
+
+        local lb = Instance.new("TextLabel", btn)
+        lb.BackgroundTransparency = 1
+        lb.Text = text
+        lb.Font = Enum.Font.GothamSemibold
+        lb.TextXAlignment = Enum.TextXAlignment.Left
+        lb.TextColor3 = theme.text
+        lb.TextScaled = true
+        lb.Position = UDim2.new(0, 36, 0, 4)
+        lb.Size = UDim2.new(1, -46, 1, -8)
+        Instance.new("UITextSizeConstraint", lb).MaxTextSize = 16
+        return btn
     end
 
-    -- abre/fecha visualmente esta aba
-    local function openThis()
-        -- desmarca botões e esconde páginas das outras abas
+    local function selectSide(sideBtn)
         for _,c in ipairs(sidebar:GetChildren()) do
             if c:IsA("TextButton") then
                 Tween:Create(c, TweenInfo.new(0.15), {BackgroundColor3 = theme.card}):Play()
             end
         end
-        for _,c in ipairs(content:GetChildren()) do
-            if c:IsA("ScrollingFrame") then c.Visible = false end
-        end
-        -- marca esta
         Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
-        page.Visible = true
-        pageTitle.Text = "| " .. (def.name or "Tab")
     end
 
-    local tab = { __name = def.name or "Tab", Open = openThis }
-    function tab:AddSection(text) return TAddSection(text) end
-    function tab:AddToggle(opt)  return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
-    function tab:AddButton(opt)  return TAddButton(opt.icon, opt.text, opt.callback) end
+    local function MakeTab(def)
+        local sideBtn = makeSideItem(def.icon, def.name or "Tab")
+        sideBtn.Parent = sidebar
 
-    sideBtn.MouseButton1Click:Connect(openThis)
+        -- private page for this tab
+        local page = Instance.new("ScrollingFrame")
+        page.BackgroundTransparency = 1
+        page.Position = UDim2.new(0, 10, 0, 44)
+        page.Size = UDim2.new(1, -20, 1, -54)
+        page.ScrollBarThickness = 6
+        page.Visible = false
+        page.Parent = content
+        local pageList = Instance.new("UIListLayout", page)
+        pageList.Padding = UDim.new(0,8)
+        pageList.SortOrder = Enum.SortOrder.LayoutOrder
+        pageList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            page.CanvasSize = UDim2.new(0,0,0,pageList.AbsoluteContentSize.Y + 8)
+        end)
 
-    -- auto-seleciona a 1ª aba criada
-    if not sidebar:FindFirstChild("_firstTabSelected") then
-        local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
-        openThis()
+        -- helpers bound to this page
+        local function TAddSection(text)
+            local s = Instance.new("TextLabel", page)
+            s.BackgroundTransparency = 1
+            s.Text = text
+            s.Font = Enum.Font.GothamBold
+            s.TextXAlignment = Enum.TextXAlignment.Left
+            s.TextColor3 = theme.text
+            s.TextScaled = true
+            s.Size = UDim2.new(1,0,0,24)
+            Instance.new("UITextSizeConstraint", s).MaxTextSize = 16
+            return s
+        end
+
+        local function TAddToggle(iconId, labelText, default, callback)
+            local row = Instance.new("Frame", page)
+            row.Size = UDim2.new(1, 0, 0, theme.rowHeight)
+            row.BackgroundColor3 = theme.row
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+            local ico = Instance.new("ImageLabel", row)
+            ico.BackgroundTransparency = 1
+            ico.Image = iconId or "rbxassetid://14862323455"
+            ico.Size = UDim2.fromOffset(18,18)
+            ico.Position = UDim2.new(0, 12, 0.5, -9)
+            ico.ImageColor3 = Color3.fromRGB(235,235,240)
+
+            local label = Instance.new("TextLabel", row)
+            label.BackgroundTransparency = 1
+            label.Text = string.upper(labelText or "TOGGLE")
+            label.Font = Enum.Font.GothamSemibold
+            label.TextColor3 = theme.text
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.TextScaled = true
+            label.Position = UDim2.new(0, 36, 0, 2)
+            label.Size = UDim2.new(1, - (theme.toggleSize.X + 70), 1, -4)
+            Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
+
+            local btn = Instance.new("TextButton", row)
+            btn.Text = ""
+            btn.AutoButtonColor = false
+            btn.Size = UDim2.fromOffset(theme.toggleSize.X, theme.toggleSize.Y)
+            btn.Position = UDim2.new(1, -(theme.toggleSize.X + 12), 0.5, -math.floor(theme.toggleSize.Y/2))
+            btn.BackgroundColor3 = theme.toggle_off
+            btn.ClipsDescendants = true
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
+
+            local knob = Instance.new("Frame", btn)
+            knob.Size = UDim2.fromOffset(theme.knobSize.X, theme.knobSize.Y)
+            knob.Position = UDim2.new(0, 2, 0.5, -math.floor(theme.knobSize.Y/2))
+            knob.BackgroundColor3 = theme.knob_off
+            Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+            local kS = Instance.new("UIStroke", knob); kS.Transparency = 0.7; kS.Color = Color3.fromRGB(0,0,0)
+
+            local offX = 2
+            local onX  = math.max(2, theme.toggleSize.X - theme.knobSize.X - 2)
+
+            local value = default and true or false
+            local function paint(v)
+                if v then
+                    Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_on}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                        {Position = UDim2.new(0, onX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_on}):Play()
+                else
+                    Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_off}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                        {Position = UDim2.new(0, offX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_off}):Play()
+                end
+            end
+            paint(value)
+
+            btn.MouseButton1Click:Connect(function()
+                value = not value
+                paint(value)
+                if callback then task.spawn(function() pcall(callback, value) end) end
+            end)
+
+            return {
+                Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
+                Get=function() return value end
+            }
+        end
+
+        local function TAddButton(iconId, text, callback)
+            local row = Instance.new("TextButton", page)
+            row.Text = ""
+            row.Size = UDim2.new(1, 0, 0, 44)
+            row.BackgroundColor3 = theme.card
+            row.AutoButtonColor = true
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
+
+            local ico = Instance.new("ImageLabel", row)
+            ico.BackgroundTransparency = 1
+            ico.Image = iconId or "rbxassetid://14862323455"
+            ico.Size = UDim2.fromOffset(18,18)
+            ico.Position = UDim2.new(0, 12, 0.5, -9)
+            ico.ImageColor3 = Color3.fromRGB(235,235,240)
+
+            local lbl = Instance.new("TextLabel", row)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = text or "BUTTON"
+            lbl.Font = Enum.Font.GothamBold
+            lbl.TextColor3 = theme.text
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.TextScaled = true
+            lbl.Position = UDim2.new(0, 36, 0, 0)
+            lbl.Size = UDim2.new(1, -36, 1, 0)
+            Instance.new("UITextSizeConstraint", lbl).MaxTextSize = 16
+
+            row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
+        end
+
+        local function openThis()
+            -- unselect others & hide their pages
+            selectSide(sideBtn)
+            for _,c in ipairs(content:GetChildren()) do
+                if c:IsA("ScrollingFrame") then c.Visible = false end
+            end
+            page.Visible = true
+            pageTitle.Text = "| " .. (def.name or "Tab")
+        end
+
+        local tab = { __name = def.name or "Tab", Open = openThis }
+        function tab:AddSection(text) return TAddSection(text) end
+        function tab:AddToggle(opt)  return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
+        function tab:AddButton(opt)  return TAddButton(opt.icon, opt.text, opt.callback) end
+
+        sideBtn.MouseButton1Click:Connect(openThis)
+
+        -- auto-select first tab
+        if not sidebar:FindFirstChild("_firstTabSelected") then
+            local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
+            openThis()
+        end
+
+        return setmetatable(tab, {__index = tab})
     end
 
-    return setmetatable(tab, {__index = tab})
+    -- header buttons
+    btnMin.MouseButton1Click:Connect(function() gui.Enabled = false end)
+    btnCls.MouseButton1Click:Connect(function()
+        gui:Destroy()
+        if Lib._currentGui == gui then Lib._currentGui = nil end
+    end)
+
+    -- expose window object
+    local winObj = {}
+    function winObj:MakeTab(o) return MakeTab(o) end
+    function winObj:_getRoots() return gui, win end
+    return winObj
 end
+
+-- ========= public API =========
+function Lib:MakeWindow(opts)
+    opts = opts or {}
+    if not opts.noLauncher then
+        ensureLauncher()
+    else
+        if Lib._launcherBtn and Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
+        Lib._launcherBtn, Lib._launcherGui = nil, nil
+    end
+    return self:_spawnWindow(opts)
+end
+
+return setmetatable({}, Lib)
