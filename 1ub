@@ -1,10 +1,10 @@
--- SyniXLib.lua v0.4.0
--- UI com Sidebar, Toggle, Button e Dropdown
+-- SyniXLib.lua v0.4.1
+-- UI com Sidebar, Toggle, Button e Dropdown (cabeçalho fixo)
 -- - Sidebar sem sobra
--- - Launcher (bolinha) arrastável: para exatamente onde soltar (salva em _G.SyniXLauncherPos)
--- - Modo SINGLE window por padrão (evita duplicar janelas)
--- - Fechar (X) destrói janela + launcher
-print("[SyniXLib] loaded v0.4.0")
+-- - Launcher (bolinha) arrastável: para exatamente onde soltar (salva _G.SyniXLauncherPos)
+-- - Modo SINGLE window por padrão (evita múltiplas janelas)
+-- - Botão X destrói janela + launcher
+print("[SyniXLib] loaded v0.4.1")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -25,7 +25,7 @@ Lib._lastOpts        = nil
 Lib._openWindows     = {}
 
 -- ===== Comportamento =====
-Lib._singleMode      = true        -- 1 janela por padrão (mude p/ false se quiser multi)
+Lib._singleMode      = true        -- 1 janela por padrão
 Lib._launcherSnap    = false       -- bolinha NÃO dá snap; fica onde soltar
 
 -- ===== Tema =====
@@ -252,7 +252,7 @@ function Lib:_spawnWindow(opts)
     -- Body
     local body = Instance.new("Frame", win)
     body.BackgroundTransparency = 1
-    body.Position = UDim2.new(0, 6, 0, 60)     -- aproxima do divisor
+    body.Position = UDim2.new(0, 6, 0, 60)
     body.Size = UDim2.new(1, -12, 1, -68)
 
     -- Sidebar (ScrollingFrame)
@@ -273,7 +273,7 @@ function Lib:_spawnWindow(opts)
         sidebar.CanvasSize = UDim2.new(0,0,0, sList.AbsoluteContentSize.Y + 6)
     end)
 
-    -- Content (encosta mais)
+    -- Content
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
     content.Size = UDim2.new(1, -(theme.sidebarWidth+6), 1, 0)
@@ -295,8 +295,8 @@ function Lib:_spawnWindow(opts)
     -- ==== LATERAL: botões 100% de largura (sem sobra) ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 38)     -- ocupa toda a largura
-        btn.Position = UDim2.new(0, 0, 0, 0)  -- sem offset
+        btn.Size = UDim2.new(1, 0, 0, 38)
+        btn.Position = UDim2.new(0, 0, 0, 0)
         btn.BackgroundColor3 = theme.card
         btn.AutoButtonColor = false
         btn.Text = ""
@@ -461,24 +461,33 @@ function Lib:_spawnWindow(opts)
             row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
         end
 
-        -- ===== Dropdown =====
+        -- ===== Dropdown (cabeçalho fixo no topo; opções expandem abaixo) =====
         local function TAddDropdown(iconId, labelText, items, default, callback)
             items = items or {}
+            local capH = theme.rowHeight
 
+            -- container
             local row = Instance.new("Frame", page)
-            row.Size = UDim2.new(1, 0, 0, theme.rowHeight)
+            row.Size = UDim2.new(1, 0, 0, capH)  -- fechado: só o cap
             row.BackgroundColor3 = theme.row
             row.ClipsDescendants = true
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
-            local ico = Instance.new("ImageLabel", row)
+            -- CAP
+            local cap = Instance.new("Frame", row)
+            cap.BackgroundTransparency = 1
+            cap.Size = UDim2.new(1, 0, 0, capH)
+            cap.ZIndex = 2
+
+            local ico = Instance.new("ImageLabel", cap)
             ico.BackgroundTransparency = 1
             ico.Image = iconId or "rbxassetid://14862323455"
             ico.Size = UDim2.fromOffset(18,18)
             ico.Position = UDim2.new(0, 12, 0.5, -9)
             ico.ImageColor3 = Color3.fromRGB(235,235,240)
+            ico.ZIndex = 2
 
-            local label = Instance.new("TextLabel", row)
+            local label = Instance.new("TextLabel", cap)
             label.BackgroundTransparency = 1
             label.Text = string.upper(labelText or "DROPDOWN")
             label.Font = Enum.Font.GothamSemibold
@@ -488,8 +497,9 @@ function Lib:_spawnWindow(opts)
             label.Position = UDim2.new(0, 36, 0, 2)
             label.Size = UDim2.new(1, -180, 1, -4)
             Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
+            label.ZIndex = 2
 
-            local valueText = Instance.new("TextLabel", row)
+            local valueText = Instance.new("TextLabel", cap)
             valueText.BackgroundTransparency = 1
             valueText.Text = tostring(default or (items[1] or ""))
             valueText.Font = Enum.Font.Gotham
@@ -499,8 +509,9 @@ function Lib:_spawnWindow(opts)
             valueText.Position = UDim2.new(0, 0, 0, 6)
             valueText.Size = UDim2.new(1, -56, 1, -12)
             Instance.new("UITextSizeConstraint", valueText).MaxTextSize = 14
+            valueText.ZIndex = 2
 
-            local chevron = Instance.new("TextLabel", row)
+            local chevron = Instance.new("TextLabel", cap)
             chevron.BackgroundTransparency = 1
             chevron.Text = "▼"
             chevron.Font = Enum.Font.GothamBold
@@ -509,12 +520,15 @@ function Lib:_spawnWindow(opts)
             chevron.Position = UDim2.new(1, -40, 0, 8)
             chevron.Size = UDim2.fromOffset(28, 28)
             Instance.new("UITextSizeConstraint", chevron).MaxTextSize = 16
+            chevron.ZIndex = 2
 
+            -- LISTA
             local opts = Instance.new("Frame", row)
             opts.BackgroundTransparency = 1
-            opts.Position = UDim2.new(0, 8, 0, theme.rowHeight)
+            opts.Position = UDim2.new(0, 8, 0, capH)
             opts.Size = UDim2.new(1, -16, 0, 0)
             opts.ClipsDescendants = true
+            opts.ZIndex = 1
 
             local optsList = Instance.new("UIListLayout", opts)
             optsList.Padding = UDim.new(0, 6)
@@ -556,24 +570,25 @@ function Lib:_spawnWindow(opts)
             end
             populate(items)
 
-            local open = false
             local function heightForList()
                 local count = #items
                 if count == 0 then return 0 end
                 return (count * 32) + ((count-1) * 6) + 8
             end
+
+            local open = false
             function toggle(want)
                 local wantOpen = (want==nil) and (not open) or want
                 open = wantOpen
                 chevron.Text = open and "▲" or "▼"
-                local y = open and (theme.rowHeight + heightForList()) or theme.rowHeight
+                local listH = open and heightForList() or 0
                 Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, 0, 0, y)}):Play()
+                    {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
                 Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, -16, 0, (open and heightForList() or 0))}):Play()
+                    {Size = UDim2.new(1, -16, 0, listH)}):Play()
             end
 
-            row.InputBegan:Connect(function(i)
+            cap.InputBegan:Connect(function(i)
                 if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
                     toggle()
                 end
@@ -611,10 +626,10 @@ function Lib:_spawnWindow(opts)
         end
 
         local tab = {}
-        function tab:AddSection(text) return TAddSection(text) end
-        function tab:AddToggle(opt)  return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
-        function tab:AddButton(opt)  return TAddButton(opt.icon, opt.text, opt.callback) end
-        function tab:AddDropdown(opt) return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
+        function tab:AddSection(text)  return TAddSection(text) end
+        function tab:AddToggle(opt)    return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
+        function tab:AddButton(opt)    return TAddButton(opt.icon, opt.text, opt.callback) end
+        function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
 
         sideBtn.MouseButton1Click:Connect(openThis)
 
