@@ -1,6 +1,6 @@
--- SyniXLib.lua v0.3.8
--- Sidebar compacta (sem sobra), launcher para onde solta, modo SINGLE por padrão
-print("[SyniXLib] loaded v0.3.8")
+-- SyniXLib.lua v0.3.9
+-- Sidebar sem sobra à direita, launcher para onde solta, SINGLE window por padrão
+print("[SyniXLib] loaded v0.3.9")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -20,9 +20,9 @@ Lib._currentWinObj   = nil
 Lib._lastOpts        = nil
 Lib._openWindows     = {}
 
--- Comportamento
-Lib._singleMode      = true        -- 1 janela por padrão (troque p/ false se quiser multi)
-Lib._launcherSnap    = false       -- agora a bolinha NÃO dá snap; fica onde soltar
+-- ===== Comportamento =====
+Lib._singleMode      = true        -- 1 janela por padrão (mude p/ false se quiser multi)
+Lib._launcherSnap    = false       -- bolinha NÃO dá snap; fica onde soltar
 
 -- ===== Tema =====
 local DEFAULT_THEME = {
@@ -40,7 +40,7 @@ local DEFAULT_THEME = {
     knob_on     = Color3.fromRGB(22,24,32),
     knob_off    = Color3.fromRGB(235,238,245),
 
-    sidebarWidth = 176,          -- um pouco mais estreito
+    sidebarWidth = 176,
     rowHeight    = 48,
     toggleSize   = Vector2.new(84,30),
     knobSize     = Vector2.new(26,26),
@@ -86,7 +86,7 @@ local function enableDrag(frame, clampToScreen)
     end)
 end
 
--- ===== Drag grudado no dedo (launcher) =====
+-- Drag grudado no dedo (launcher)
 local function enableLauncherDrag(btn)
     btn.Active = true
     local dragging = false
@@ -100,9 +100,7 @@ local function enableLauncherDrag(btn)
             i.Changed:Connect(function()
                 if i.UserInputState==Enum.UserInputState.End then
                     dragging = false
-                    -- salva onde soltou
-                    _G.SyniXLauncherPos = btn.Position
-                    -- (sem snap)
+                    _G.SyniXLauncherPos = btn.Position -- salva onde soltou
                 end
             end)
         end
@@ -250,7 +248,7 @@ function Lib:_spawnWindow(opts)
     -- Body
     local body = Instance.new("Frame", win)
     body.BackgroundTransparency = 1
-    body.Position = UDim2.new(0, 6, 0, 60)           -- 2px a menos pra encostar melhor
+    body.Position = UDim2.new(0, 6, 0, 60)     -- aproxima do divisor
     body.Size = UDim2.new(1, -12, 1, -68)
 
     -- Sidebar (ScrollingFrame)
@@ -265,13 +263,13 @@ function Lib:_spawnWindow(opts)
     local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
 
     local sList = Instance.new("UIListLayout", sidebar)
-    sList.Padding = UDim.new(0,4)                    -- mais compacto
+    sList.Padding = UDim.new(0,4)
     sList.SortOrder = Enum.SortOrder.LayoutOrder
     sList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         sidebar.CanvasSize = UDim2.new(0,0,0, sList.AbsoluteContentSize.Y + 6)
     end)
 
-    -- Content (encosta mais perto da sidebar: +6 ao invés de +10)
+    -- Content (encosta mais)
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
     content.Size = UDim2.new(1, -(theme.sidebarWidth+6), 1, 0)
@@ -290,11 +288,11 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- Item da lateral (menos margem e mais largura útil)
+    -- ==== LATERAL: botões 100% de largura (sem sobra) ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -8, 0, 38)          -- antes -12
-        btn.Position = UDim2.new(0, 4, 0, 0)        -- antes 6
+        btn.Size = UDim2.new(1, 0, 0, 38)     -- ocupa toda a largura
+        btn.Position = UDim2.new(0, 0, 0, 0)  -- sem offset
         btn.BackgroundColor3 = theme.card
         btn.AutoButtonColor = false
         btn.Text = ""
