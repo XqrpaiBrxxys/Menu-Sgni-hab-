@@ -1,8 +1,8 @@
--- SyniXLib.lua v0.3.3
+-- SyniXLib.lua v0.3.3a
 -- Sidebar UI (B/W), tabs, sections, toggles, buttons
--- - Optional floating launcher with corner-snap
+-- - Launcher opcional; quando habilitado, APENAS mostra/oculta a janela (não duplica)
 -- - One window at a time
-print("[SyniXLib] loaded v0.3.3")
+print("[SyniXLib] loaded v0.3.3a")
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -136,12 +136,12 @@ local function ensureLauncher()
         end
     end)
 
+    -- *** aqui está o comportamento NOVO: alterna mostrar/ocultar a janela atual
     launcher.MouseButton1Click:Connect(function()
-        -- se o launcher estiver desativado, ignora qualquer clique
         if not Lib._launcherEnabled then return end
         if Lib._currentGui and Lib._currentGui.Parent then
-            Lib._currentGui:Destroy()
-            Lib._currentGui = nil
+            Lib._currentGui.Enabled = not Lib._currentGui.Enabled
+            return
         end
         if Lib._lastOpts then
             Lib:_spawnWindow(Lib._lastOpts)
@@ -233,7 +233,7 @@ function Lib:_spawnWindow(opts)
     Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,10)
     local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
     local sList = Instance.new("UIListLayout", sidebar)
-    sList.Padding = UDim.new(0,6); sList.SortOrder = Enum.SortOrder.LayoutOrder
+    sList.Padding = UDim2.new(0,6); sList.SortOrder = Enum.SortOrder.LayoutOrder
 
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
@@ -449,7 +449,9 @@ function Lib:_spawnWindow(opts)
     end
 
     -- header buttons
-    btnMin.MouseButton1Click:Connect(function() gui.Enabled = false end)
+    btnMin.MouseButton1Click:Connect(function()
+        gui.Enabled = false -- minimiza (sem animação)
+    end)
     btnCls.MouseButton1Click:Connect(function()
         gui:Destroy()
         if Lib._currentGui == gui then Lib._currentGui = nil end
@@ -465,14 +467,11 @@ end
 -- ========= public API =========
 function Lib:MakeWindow(opts)
     opts = opts or {}
-    -- controla o launcher para esta sessão
     Lib._launcherEnabled = not opts.noLauncher
 
     if Lib._launcherEnabled then
-        -- cria/reusa launcher
         ensureLauncher()
     else
-        -- remove qualquer launcher antigo e evita reabrir janela vazia
         if Lib._launcherBtn and Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
         if Lib._launcherGui and Lib._launcherGui.Parent then Lib._launcherGui:Destroy() end
         Lib._launcherBtn, Lib._launcherGui = nil, nil
