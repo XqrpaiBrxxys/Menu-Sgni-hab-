@@ -1,15 +1,8 @@
--- SyniXLib.lua v0.3.7
--- Janela + sidebar + abas + seção + toggle + botão
--- Correções:
---  - Launcher segue o dedo exatamente (drag centrado), com snap nos cantos
---  - Sidebar é ScrollingFrame com canvas dinâmico e padding compacto
---  - Padrão: modo SINGLE (não duplica ao rodar 2x)
-print("[SyniXLib] loaded v0.3.7")
+-- SyniXLib.lua v0.3.8
+-- Sidebar compacta (sem sobra), launcher para onde solta, modo SINGLE por padrão
+print("[SyniXLib] loaded v0.3.8")
 
--- Singleton guard
-if _G.__SyniXSingleton then
-    return _G.__SyniXSingleton
-end
+if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -18,7 +11,7 @@ local Tween   = game:GetService("TweenService")
 local Lib = {}
 Lib.__index = Lib
 
--- Estado
+-- ===== Estado =====
 Lib._launcherGui     = nil
 Lib._launcherBtn     = nil
 Lib._launcherEnabled = true
@@ -27,11 +20,11 @@ Lib._currentWinObj   = nil
 Lib._lastOpts        = nil
 Lib._openWindows     = {}
 
--- SINGLE por padrão (troque para false se quiser multi)
-Lib._singleMode      = true
--- Lib._singleMode   = false
+-- Comportamento
+Lib._singleMode      = true        -- 1 janela por padrão (troque p/ false se quiser multi)
+Lib._launcherSnap    = false       -- agora a bolinha NÃO dá snap; fica onde soltar
 
--- Tema
+-- ===== Tema =====
 local DEFAULT_THEME = {
     bg_window   = Color3.fromRGB(14,15,20),
     bg_header   = Color3.fromRGB(20,21,28),
@@ -47,7 +40,7 @@ local DEFAULT_THEME = {
     knob_on     = Color3.fromRGB(22,24,32),
     knob_off    = Color3.fromRGB(235,238,245),
 
-    sidebarWidth = 180,          -- mais compacto
+    sidebarWidth = 176,          -- um pouco mais estreito
     rowHeight    = 48,
     toggleSize   = Vector2.new(84,30),
     knobSize     = Vector2.new(26,26),
@@ -55,7 +48,7 @@ local DEFAULT_THEME = {
     winSize      = UDim2.fromOffset(680,400),
 }
 
--- Utils
+-- ===== Utils =====
 local function merge(a,b)
     local t = {}
     for k,v in pairs(a or {}) do t[k]=v end
@@ -93,40 +86,24 @@ local function enableDrag(frame, clampToScreen)
     end)
 end
 
--- SNAP para o canto mais próximo
-local function snapToCorner(btn)
-    local parent = btn.Parent
-    if not parent then return end
-    local sz = parent.AbsoluteSize
-    local w,h = btn.AbsoluteSize.X, btn.AbsoluteSize.Y
-    local m = 14
-    local corners = {
-        Vector2.new(m, m),
-        Vector2.new(sz.X - w - m, m),
-        Vector2.new(m, sz.Y - h - m),
-        Vector2.new(sz.X - w - m, sz.Y - h - m),
-    }
-    local here = Vector2.new(btn.AbsolutePosition.X, btn.AbsolutePosition.Y)
-    local best, bestDist = corners[1], math.huge
-    for _,c in ipairs(corners) do
-        local d = (here - c).Magnitude
-        if d < bestDist then best, bestDist = c, d end
-    end
-    Tween:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        {Position = UDim2.fromOffset(best.X, best.Y)}):Play()
-    _G.SyniXLauncherPos = UDim2.fromOffset(best.X, best.Y)
-end
-
--- Drag “grudado no dedo” exclusivo do launcher
+-- ===== Drag grudado no dedo (launcher) =====
 local function enableLauncherDrag(btn)
     btn.Active = true
     local dragging = false
-    local function getMouse() local m = UIS:GetMouseLocation(); return Vector2.new(m.X, m.Y) end
+    local function getMouse()
+        local m = UIS:GetMouseLocation()
+        return Vector2.new(m.X, m.Y)
+    end
     btn.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
             dragging = true
             i.Changed:Connect(function()
-                if i.UserInputState==Enum.UserInputState.End then dragging=false; snapToCorner(btn) end
+                if i.UserInputState==Enum.UserInputState.End then
+                    dragging = false
+                    -- salva onde soltou
+                    _G.SyniXLauncherPos = btn.Position
+                    -- (sem snap)
+                end
             end)
         end
     end)
@@ -136,7 +113,6 @@ local function enableLauncherDrag(btn)
         local m = getMouse()
         local w,h = btn.AbsoluteSize.X, btn.AbsoluteSize.Y
         local px, py = m.X - w/2, m.Y - h/2
-        -- clamp em tela
         if btn.Parent then
             local sz = btn.Parent.AbsoluteSize
             px = math.clamp(px, 0, math.max(0, sz.X - w))
@@ -146,7 +122,7 @@ local function enableLauncherDrag(btn)
     end)
 end
 
--- Launcher
+-- ===== Launcher =====
 local function ensureLauncher()
     if not Lib._launcherEnabled then return end
     if Lib._launcherBtn and Lib._launcherBtn.Parent then return end
@@ -166,7 +142,6 @@ local function ensureLauncher()
     launcher.Name = "Launcher"
     launcher.Image = "rbxassetid://14862323455"
     launcher.Size = UDim2.fromOffset(56,56)
-    launcher.AnchorPoint = Vector2.new(0,0)
     launcher.Position = _G.SyniXLauncherPos or UDim2.new(0, 14, 1, -72)
     launcher.BackgroundColor3 = Color3.fromRGB(26,28,36)
     launcher.BorderSizePixel = 0
@@ -200,7 +175,7 @@ local function destroyLauncher()
     end
 end
 
--- Construção
+-- ===== Construção da janela =====
 function Lib:_spawnWindow(opts)
     opts = opts or {}
     if Lib._singleMode then opts.multi = false end
@@ -209,7 +184,7 @@ function Lib:_spawnWindow(opts)
     local theme = merge(DEFAULT_THEME, (opts and opts.theme) or {})
     if opts and opts.size then theme.winSize = opts.size end
 
-    -- SINGLE: reutiliza a existente
+    -- reusa janela no modo single
     if not (opts and opts.multi) then
         if Lib._currentGui and Lib._currentGui.Parent then
             Lib._currentGui.Enabled = true
@@ -227,7 +202,6 @@ function Lib:_spawnWindow(opts)
     win.Name = "Window"
     win.Size = theme.winSize
     win.BackgroundColor3 = theme.bg_window
-    win.Visible = true
     Instance.new("UICorner", win).CornerRadius = UDim.new(0,14)
     local wS = Instance.new("UIStroke", win); wS.Color=theme.stroke; wS.Transparency=0.15
     win.Parent = gui
@@ -273,12 +247,13 @@ function Lib:_spawnWindow(opts)
     local btnMin = mkHeadBtn("-"); btnMin.Parent = header; btnMin.Size = UDim2.fromOffset(32,26); btnMin.Position = UDim2.new(1,-74,0.5,-13)
     local btnCls = mkHeadBtn("X"); btnCls.Parent = header; btnCls.Size = UDim2.fromOffset(32,26); btnCls.Position = UDim2.new(1,-38,0.5,-13)
 
+    -- Body
     local body = Instance.new("Frame", win)
     body.BackgroundTransparency = 1
-    body.Position = UDim2.new(0, 8, 0, 60)
-    body.Size = UDim2.new(1, -16, 1, -68)
+    body.Position = UDim2.new(0, 6, 0, 60)           -- 2px a menos pra encostar melhor
+    body.Size = UDim2.new(1, -12, 1, -68)
 
-    -- Sidebar -> ScrollingFrame
+    -- Sidebar (ScrollingFrame)
     local sidebar = Instance.new("ScrollingFrame", body)
     sidebar.Name = "Sidebar"
     sidebar.BackgroundColor3 = theme.bg_sidebar
@@ -288,18 +263,19 @@ function Lib:_spawnWindow(opts)
     sidebar.CanvasSize = UDim2.new(0,0,0,0)
     Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,10)
     local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
+
     local sList = Instance.new("UIListLayout", sidebar)
-    sList.Padding = UDim.new(0,4) -- compacto
+    sList.Padding = UDim.new(0,4)                    -- mais compacto
     sList.SortOrder = Enum.SortOrder.LayoutOrder
     sList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        sidebar.CanvasSize = UDim2.new(0,0,0,sList.AbsoluteContentSize.Y + 8)
+        sidebar.CanvasSize = UDim2.new(0,0,0, sList.AbsoluteContentSize.Y + 6)
     end)
 
-    -- Content
+    -- Content (encosta mais perto da sidebar: +6 ao invés de +10)
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
-    content.Size = UDim2.new(1, -(theme.sidebarWidth+10), 1, 0)
-    content.Position = UDim2.new(0, theme.sidebarWidth+10, 0, 0)
+    content.Size = UDim2.new(1, -(theme.sidebarWidth+6), 1, 0)
+    content.Position = UDim2.new(0, theme.sidebarWidth+6, 0, 0)
     Instance.new("UICorner", content).CornerRadius = UDim.new(0,10)
     local cS = Instance.new("UIStroke", content); cS.Transparency=0.85; cS.Color=theme.stroke
 
@@ -310,15 +286,15 @@ function Lib:_spawnWindow(opts)
     pageTitle.TextColor3 = theme.text
     pageTitle.TextScaled = true
     pageTitle.TextXAlignment = Enum.TextXAlignment.Left
-    pageTitle.Position = UDim2.new(0, 12, 0, 8)
-    pageTitle.Size = UDim2.new(1, -24, 0, 28)
+    pageTitle.Position = UDim2.new(0, 10, 0, 8)
+    pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- Side item
+    -- Item da lateral (menos margem e mais largura útil)
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -12, 0, 38)
-        btn.Position = UDim2.new(0, 6, 0, 0)
+        btn.Size = UDim2.new(1, -8, 0, 38)          -- antes -12
+        btn.Position = UDim2.new(0, 4, 0, 0)        -- antes 6
         btn.BackgroundColor3 = theme.card
         btn.AutoButtonColor = false
         btn.Text = ""
@@ -339,7 +315,7 @@ function Lib:_spawnWindow(opts)
         lb.TextColor3 = theme.text
         lb.TextScaled = true
         lb.Position = UDim2.new(0, 36, 0, 4)
-        lb.Size = UDim2.new(1, -46, 1, -8)
+        lb.Size = UDim2.new(1, -44, 1, -8)
         Instance.new("UITextSizeConstraint", lb).MaxTextSize = 16
         return btn
     end
@@ -360,8 +336,8 @@ function Lib:_spawnWindow(opts)
 
         local page = Instance.new("ScrollingFrame")
         page.BackgroundTransparency = 1
-        page.Position = UDim2.new(0, 10, 0, 44)
-        page.Size = UDim2.new(1, -20, 1, -54)
+        page.Position = UDim2.new(0, 8, 0, 44)
+        page.Size = UDim2.new(1, -16, 1, -54)
         page.ScrollBarThickness = 6
         page.Visible = false
         page.Parent = content
@@ -484,15 +460,15 @@ function Lib:_spawnWindow(opts)
         end
 
         local function openThis()
-            selectSide(sideBtn)
             for _,c in ipairs(content:GetChildren()) do
                 if c:IsA("ScrollingFrame") then c.Visible = false end
             end
             page.Visible = true
+            selectSide(sideBtn)
             pageTitle.Text = "| " .. (def.name or "Tab")
         end
 
-        local tab = { __name = def.name or "Tab", Open = openThis }
+        local tab = {}
         function tab:AddSection(text) return TAddSection(text) end
         function tab:AddToggle(opt)  return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
         function tab:AddButton(opt)  return TAddButton(opt.icon, opt.text, opt.callback) end
@@ -507,32 +483,22 @@ function Lib:_spawnWindow(opts)
         return setmetatable(tab, {__index = tab})
     end
 
-    -- Posicionamento inicial
+    -- posição inicial
     if opts and opts.multi then
-        local function placeCascaded(w, idx)
-            local baseX, baseY = 120, 80
-            local dx, dy       = 24, 32
-            local wrapsEvery   = 8
-            local n = idx or (#Lib._openWindows)
-            local k = n % wrapsEvery
-            local px = baseX + dx * k
-            local py = baseY + dy * k
-            local screen = w.Parent and w.Parent.AbsoluteSize or Vector2.new(1280, 720)
-            px = math.clamp(px, 0, math.max(0, screen.X - w.AbsoluteSize.X))
-            py = math.clamp(py, 0, math.max(0, screen.Y - w.AbsoluteSize.Y))
-            w.Position = UDim2.fromOffset(px, py)
-        end
-        placeCascaded(win, #Lib._openWindows)
+        local baseX, baseY, dx, dy = 120, 80, 24, 32
+        local k = (#Lib._openWindows) % 8
+        local px, py = baseX + dx*k, baseY + dy*k
+        local screen = win.Parent and win.Parent.AbsoluteSize or Vector2.new(1280,720)
+        px = math.clamp(px, 0, math.max(0, screen.X - win.AbsoluteSize.X))
+        py = math.clamp(py, 0, math.max(0, screen.Y - win.AbsoluteSize.Y))
+        win.Position = UDim2.fromOffset(px, py)
     else
         win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
     end
 
-    -- Header buttons
-    btnMin.MouseButton1Click:Connect(function()
-        gui.Enabled = false
-    end)
+    -- header buttons
+    btnMin.MouseButton1Click:Connect(function() gui.Enabled = false end)
     btnCls.MouseButton1Click:Connect(function()
-        -- destrói TODAS as janelas e o launcher
         for i=#Lib._openWindows,1,-1 do
             local g = Lib._openWindows[i]
             if g and g.Parent then g:Destroy() end
@@ -544,20 +510,18 @@ function Lib:_spawnWindow(opts)
         gui:Destroy()
     end)
 
-    -- API WinObj
+    -- win obj
     local winObj = {}
     function winObj:MakeTab(o) return MakeTab(o) end
     function winObj:_getRoots() return gui, win end
 
-    -- Registrar / limpeza
     table.insert(Lib._openWindows, gui)
     gui.Destroying:Connect(function()
         for i,g in ipairs(Lib._openWindows) do
             if g == gui then table.remove(Lib._openWindows, i) break end
         end
         if Lib._currentGui == gui then
-            Lib._currentGui = nil
-            Lib._currentWinObj = nil
+            Lib._currentGui, Lib._currentWinObj = nil, nil
         end
     end)
 
@@ -570,7 +534,7 @@ function Lib:_spawnWindow(opts)
     return winObj
 end
 
--- Pública
+-- ===== API =====
 function Lib:MakeWindow(opts)
     opts = opts or {}
     if Lib._singleMode then opts.multi = false end
