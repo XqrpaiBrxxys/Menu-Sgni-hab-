@@ -1,13 +1,9 @@
--- SyniXLib.lua v0.3.4
+-- SyniXLib.lua v0.3.6
 -- UI leve: janela + sidebar + abas + seção + toggle + botão
--- Recursos:
---  - Singleton: não duplica ao executar o loader 2x
---  - Launcher (bolinha): mostra/oculta a janela (não duplica)
---  - Botão X destrói TUDO (janela + launcher)
---  - Multi-janelas opcionais (multi=true) com posicionamento em cascata
-print("[SyniXLib] loaded v0.3.4")
+-- Padrão: modo SINGLE (apenas 1 janela). Launcher só mostra/oculta.
+print("[SyniXLib] loaded v0.3.6")
 
--- ===== Singleton guard (impede múltiplas cópias da lib) =====
+-- ===== Singleton guard: não carrega duas vezes =====
 if _G.__SyniXSingleton then
     return _G.__SyniXSingleton
 end
@@ -23,10 +19,14 @@ Lib.__index = Lib
 Lib._launcherGui     = nil
 Lib._launcherBtn     = nil
 Lib._launcherEnabled = true
-Lib._currentGui      = nil          -- última janela "principal" (quando multi=false)
-Lib._currentWinObj   = nil          -- objeto win da janela principal
+Lib._currentGui      = nil          -- janela principal (single)
+Lib._currentWinObj   = nil
 Lib._lastOpts        = nil
-Lib._openWindows     = {}           -- pra cascata (multi=true)
+Lib._openWindows     = {}           -- usado se liberar multi
+
+-- Modo SINGLE forçado (padrão). Troque para false se quiser multi.
+Lib._singleMode      = true
+-- Lib._singleMode   = false   -- <<< descomente para permitir várias janelas
 
 -- ===== Tema =====
 local DEFAULT_THEME = {
@@ -151,11 +151,8 @@ local function ensureLauncher()
     launcher.MouseButton1Click:Connect(function()
         if Lib._currentGui and Lib._currentGui.Parent then
             Lib._currentGui.Enabled = not Lib._currentGui.Enabled
-        else
-            -- se não tem janela (fechou com X), recria com último opts
-            if Lib._lastOpts then
-                Lib:_spawnWindow(Lib._lastOpts)
-            end
+        elseif Lib._lastOpts then
+            Lib:_spawnWindow(Lib._lastOpts)
         end
     end)
 
@@ -175,11 +172,18 @@ end
 
 -- ===== Construção da janela =====
 function Lib:_spawnWindow(opts)
+    opts = opts or {}
+
+    -- se single mode estiver ativo, nenhuma janela múltipla é permitida
+    if Lib._singleMode then
+        opts.multi = false
+    end
+
     local player = Players.LocalPlayer
     local theme = merge(DEFAULT_THEME, (opts and opts.theme) or {})
     if opts and opts.size then theme.winSize = opts.size end
 
-    -- se NÃO for multi: reutiliza a janela existente (não duplica)
+    -- SINGLE: reusa a janela existente
     if not (opts and opts.multi) then
         if Lib._currentGui and Lib._currentGui.Parent then
             Lib._currentGui.Enabled = true
@@ -187,12 +191,12 @@ function Lib:_spawnWindow(opts)
         end
     end
 
+    -- cria GUI e janela
     local gui = Instance.new("ScreenGui")
     gui.Name = "SyniX_Window"
     gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
     gui.Parent = player:WaitForChild("PlayerGui")
 
-    -- janela
     local win = Instance.new("Frame")
     win.Name = "Window"
     win.Size = theme.winSize
@@ -203,7 +207,7 @@ function Lib:_spawnWindow(opts)
     win.Parent = gui
     enableDrag(win, true)
 
-    -- header
+    -- Header
     local header = Instance.new("Frame")
     header.Parent = win
     header.BackgroundColor3 = theme.bg_header
@@ -243,12 +247,13 @@ function Lib:_spawnWindow(opts)
     local btnMin = mkHeadBtn("-"); btnMin.Parent = header; btnMin.Size = UDim2.fromOffset(32,26); btnMin.Position = UDim2.new(1,-74,0.5,-13)
     local btnCls = mkHeadBtn("X"); btnCls.Parent = header; btnCls.Size = UDim2.fromOffset(32,26); btnCls.Position = UDim2.new(1,-38,0.5,-13)
 
+    -- Body
     local body = Instance.new("Frame", win)
     body.BackgroundTransparency = 1
     body.Position = UDim2.new(0, 8, 0, 60)
     body.Size = UDim2.new(1, -16, 1, -68)
 
-    -- sidebar
+    -- Sidebar
     local sidebar = Instance.new("Frame", body)
     sidebar.BackgroundColor3 = theme.bg_sidebar
     sidebar.Size = UDim2.new(0, theme.sidebarWidth, 1, 0)
@@ -256,9 +261,10 @@ function Lib:_spawnWindow(opts)
     Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,10)
     local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
     local sList = Instance.new("UIListLayout", sidebar)
-    sList.Padding = UDim.new(0,6)   -- UDim (fix)
+    sList.Padding = UDim.new(0,6) -- UDim (correto)
     sList.SortOrder = Enum.SortOrder.LayoutOrder
 
+    -- Content
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
     content.Size = UDim2.new(1, -(theme.sidebarWidth+10), 1, 0)
@@ -277,7 +283,7 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -24, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- ===== Tabs (cada aba tem sua própria ScrollingFrame) =====
+    -- Side item
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, -12, 0, 40)
@@ -316,6 +322,7 @@ function Lib:_spawnWindow(opts)
         Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
     end
 
+    -- Abas
     local function MakeTab(def)
         local sideBtn = makeSideItem(def.icon, def.name or "Tab")
         sideBtn.Parent = sidebar
@@ -461,7 +468,6 @@ function Lib:_spawnWindow(opts)
 
         sideBtn.MouseButton1Click:Connect(openThis)
 
-        -- auto-select first tab
         if not sidebar:FindFirstChild("_firstTabSelected") then
             local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
             openThis()
@@ -470,7 +476,7 @@ function Lib:_spawnWindow(opts)
         return setmetatable(tab, {__index = tab})
     end
 
-    -- posicionamento: cascata se multi, senão centraliza
+    -- Posicionamento inicial (SINGLE centraliza)
     if opts and opts.multi then
         local function placeCascaded(w, idx)
             local baseX, baseY = 120, 80
@@ -490,12 +496,12 @@ function Lib:_spawnWindow(opts)
         win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
     end
 
-    -- botões do header
+    -- Botões do header
     btnMin.MouseButton1Click:Connect(function()
         gui.Enabled = false
     end)
     btnCls.MouseButton1Click:Connect(function()
-        -- destrói TODAS as janelas e o launcher (pedido do usuário)
+        -- destrói TODAS as janelas e o launcher
         for i=#Lib._openWindows,1,-1 do
             local g = Lib._openWindows[i]
             if g and g.Parent then g:Destroy() end
@@ -512,7 +518,7 @@ function Lib:_spawnWindow(opts)
     function winObj:MakeTab(o) return MakeTab(o) end
     function winObj:_getRoots() return gui, win end
 
-    -- registra
+    -- Registro/limpeza
     table.insert(Lib._openWindows, gui)
     gui.Destroying:Connect(function()
         for i,g in ipairs(Lib._openWindows) do
@@ -524,7 +530,7 @@ function Lib:_spawnWindow(opts)
         end
     end)
 
-    -- se NÃO for multi: marca como janela principal
+    -- Em modo SINGLE, esta passa a ser a principal
     if not (opts and opts.multi) then
         Lib._currentGui = gui
         Lib._currentWinObj = winObj
@@ -537,8 +543,11 @@ end
 -- ===== API pública =====
 function Lib:MakeWindow(opts)
     opts = opts or {}
-    Lib._launcherEnabled = not opts.noLauncher
+    if Lib._singleMode then
+        opts.multi = false
+    end
 
+    Lib._launcherEnabled = not opts.noLauncher
     if Lib._launcherEnabled then
         ensureLauncher()
     else
@@ -549,6 +558,6 @@ function Lib:MakeWindow(opts)
     return self:_spawnWindow(opts)
 end
 
--- guarda singleton e retorna
+-- ===== Exporta singleton =====
 _G.__SyniXSingleton = setmetatable({}, Lib)
 return _G.__SyniXSingleton
