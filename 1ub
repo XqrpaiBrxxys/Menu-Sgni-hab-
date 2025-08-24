@@ -1,8 +1,8 @@
--- SyniXLib.lua v0.3.2
+-- SyniXLib.lua v0.3.3
 -- Sidebar UI (B/W), tabs, sections, toggles, buttons
--- - Optional floating launcher with corner-snap (stores _G.SyniXLauncherPos)
--- - One window at a time (opens new, closes previous)
-print("[SyniXLib] loaded v0.3.2")
+-- - Optional floating launcher with corner-snap
+-- - One window at a time
+print("[SyniXLib] loaded v0.3.3")
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -12,10 +12,11 @@ local Lib = {}
 Lib.__index = Lib
 
 -- state
-Lib._launcherGui = nil
-Lib._launcherBtn = nil
-Lib._currentGui  = nil
-Lib._lastOpts    = nil
+Lib._launcherGui     = nil
+Lib._launcherBtn     = nil
+Lib._currentGui      = nil
+Lib._lastOpts        = nil
+Lib._launcherEnabled = true  -- controlado por MakeWindow(noLauncher)
 
 -- ========= THEME =========
 local DEFAULT_THEME = {
@@ -136,6 +137,8 @@ local function ensureLauncher()
     end)
 
     launcher.MouseButton1Click:Connect(function()
+        -- se o launcher estiver desativado, ignora qualquer clique
+        if not Lib._launcherEnabled then return end
         if Lib._currentGui and Lib._currentGui.Parent then
             Lib._currentGui:Destroy()
             Lib._currentGui = nil
@@ -293,7 +296,7 @@ function Lib:_spawnWindow(opts)
         local sideBtn = makeSideItem(def.icon, def.name or "Tab")
         sideBtn.Parent = sidebar
 
-        -- private page for this tab
+        -- page exclusiva desta aba
         local page = Instance.new("ScrollingFrame")
         page.BackgroundTransparency = 1
         page.Position = UDim2.new(0, 10, 0, 44)
@@ -308,7 +311,7 @@ function Lib:_spawnWindow(opts)
             page.CanvasSize = UDim2.new(0,0,0,pageList.AbsoluteContentSize.Y + 8)
         end)
 
-        -- helpers bound to this page
+        -- helpers ligados a esta page
         local function TAddSection(text)
             local s = Instance.new("TextLabel", page)
             s.BackgroundTransparency = 1
@@ -421,7 +424,6 @@ function Lib:_spawnWindow(opts)
         end
 
         local function openThis()
-            -- unselect others & hide their pages
             selectSide(sideBtn)
             for _,c in ipairs(content:GetChildren()) do
                 if c:IsA("ScrollingFrame") then c.Visible = false end
@@ -463,12 +465,20 @@ end
 -- ========= public API =========
 function Lib:MakeWindow(opts)
     opts = opts or {}
-    if not opts.noLauncher then
+    -- controla o launcher para esta sessão
+    Lib._launcherEnabled = not opts.noLauncher
+
+    if Lib._launcherEnabled then
+        -- cria/reusa launcher
         ensureLauncher()
     else
+        -- remove qualquer launcher antigo e evita reabrir janela vazia
         if Lib._launcherBtn and Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
+        if Lib._launcherGui and Lib._launcherGui.Parent then Lib._launcherGui:Destroy() end
         Lib._launcherBtn, Lib._launcherGui = nil, nil
+        Lib._lastOpts = nil
     end
+
     return self:_spawnWindow(opts)
 end
 
