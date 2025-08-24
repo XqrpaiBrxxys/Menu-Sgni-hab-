@@ -1,8 +1,8 @@
--- SyniXLib.lua v0.3.4a
+-- SyniXLib.lua v0.3.3b
 -- Sidebar UI (B/W), tabs, sections, toggles, buttons
 -- - Launcher opcional; quando habilitado, APENAS mostra/oculta a janela (não duplica)
 -- - One window at a time
-print("[SyniXLib] loaded v0.3.3a")
+print("[SyniXLib] loaded v0.3.3b")
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -136,7 +136,7 @@ local function ensureLauncher()
         end
     end)
 
-    -- *** aqui está o comportamento NOVO: alterna mostrar/ocultar a janela atual
+    -- alterna mostrar/ocultar a janela atual (sem duplicar)
     launcher.MouseButton1Click:Connect(function()
         if not Lib._launcherEnabled then return end
         if Lib._currentGui and Lib._currentGui.Parent then
@@ -226,6 +226,7 @@ function Lib:_spawnWindow(opts)
     body.Position = UDim2.new(0, 8, 0, 60)
     body.Size = UDim2.new(1, -16, 1, -68)
 
+    -- sidebar
     local sidebar = Instance.new("Frame", body)
     sidebar.BackgroundColor3 = theme.bg_sidebar
     sidebar.Size = UDim2.new(0, theme.sidebarWidth, 1, 0)
@@ -233,7 +234,8 @@ function Lib:_spawnWindow(opts)
     Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,10)
     local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
     local sList = Instance.new("UIListLayout", sidebar)
-    sList.Padding = UDim2.new(0,6); sList.SortOrder = Enum.SortOrder.LayoutOrder
+    sList.Padding = UDim.new(0,6)  -- << FIX: UDim (não UDim2)
+    sList.SortOrder = Enum.SortOrder.LayoutOrder
 
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
@@ -305,7 +307,7 @@ function Lib:_spawnWindow(opts)
         page.Visible = false
         page.Parent = content
         local pageList = Instance.new("UIListLayout", page)
-        pageList.Padding = UDim.new(0,8)
+        pageList.Padding = UDim.new(0,8) -- já era UDim (ok)
         pageList.SortOrder = Enum.SortOrder.LayoutOrder
         pageList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
             page.CanvasSize = UDim2.new(0,0,0,pageList.AbsoluteContentSize.Y + 8)
