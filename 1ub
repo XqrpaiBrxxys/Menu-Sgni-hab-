@@ -1,4 +1,4 @@
--- SyniXLib.lua v0.3.3a
+-- SyniXLib.lua v0.3.4a
 -- Sidebar UI (B/W), tabs, sections, toggles, buttons
 -- - Launcher opcional; quando habilitado, APENAS mostra/oculta a janela (não duplica)
 -- - One window at a time
