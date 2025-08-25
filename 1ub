@@ -1,19 +1,12 @@
--- SyniXLib.lua v0.4.4
--- UI com Sidebar, Toggle, Button e Dropdown
--- Mudanças desta versão:
--- - REMOVIDOS ícones do Toggle e do Dropdown (somente texto + desc)
--- - Sidebar mantém ícones (configurável por theme.sideIconSize)
--- - Launcher (bolinha) arrastável, para exatamente onde soltar
--- - Janela única por padrão; X fecha tudo (janela + launcher)
--- - Dropdown com cabeçalho fixo, opções abrem por baixo
--- - Suporta "desc" (descrição) em Toggle e Dropdown
+-- SyniXLib.lua v0.4.2
+-- UI com Sidebar, Toggle, Button e Dropdown (cabeçalho fixo)
+-- - Sidebar sem sobra / ícone maior configurável
+-- - Launcher (bolinha) arrastável e para onde soltar (_G.SyniXLauncherPos)
+-- - Modo SINGLE window (evita duplicar). X fecha tudo (janela + launcher)
 
-if _G.__SyniXSingleton then
-    print("[SyniXLib] reusing singleton")
-    return _G.__SyniXSingleton
-end
+print("[SyniXLib] loaded v0.4.2")
 
-print("[SyniXLib] loaded v0.4.4")
+if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -30,7 +23,10 @@ Lib._currentGui      = nil
 Lib._currentWinObj   = nil
 Lib._lastOpts        = nil
 Lib._openWindows     = {}
+
+-- ===== Comportamento =====
 Lib._singleMode      = true        -- 1 janela por padrão
+Lib._launcherSnap    = false       -- bolinha NÃO dá snap; fica onde soltar
 
 -- ===== Tema =====
 local DEFAULT_THEME = {
@@ -53,7 +49,7 @@ local DEFAULT_THEME = {
     toggleSize   = Vector2.new(84,30),
     knobSize     = Vector2.new(26,26),
 
-    sideIconSize = 28,                 -- tamanho do ícone das abas
+    sideIconSize = 28,          -- << tamanho do ícone das abas
     winSize      = UDim2.fromOffset(680,400),
 }
 
@@ -95,7 +91,7 @@ local function enableDrag(frame, clampToScreen)
     end)
 end
 
--- Drag do launcher "grudado no dedo"
+-- Drag grudado no dedo (launcher)
 local function enableLauncherDrag(btn)
     btn.Active = true
     local dragging = false
@@ -130,30 +126,19 @@ local function enableLauncherDrag(btn)
 end
 
 -- ===== Launcher =====
-local function destroyLauncher(self)
-    if self._launcherBtn then
-        if self._launcherBtn.Parent then self._launcherBtn:Destroy() end
-        self._launcherBtn = nil
-    end
-    if self._launcherGui then
-        if self._launcherGui.Parent then self._launcherGui:Destroy() end
-        self._launcherGui = nil
-    end
-end
-
-local function ensureLauncher(self)
-    if not self._launcherEnabled then return end
-    if self._launcherBtn and self._launcherBtn.Parent then return end
+local function ensureLauncher()
+    if not Lib._launcherEnabled then return end
+    if Lib._launcherBtn and Lib._launcherBtn.Parent then return end
 
     local player = Players.LocalPlayer
-    local gui = self._launcherGui
+    local gui = Lib._launcherGui
     if not gui or not gui.Parent then
         gui = Instance.new("ScreenGui")
         gui.Name = "SyniX_LauncherRoot"
         gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
         gui.DisplayOrder = 1000
         gui.Parent = player:WaitForChild("PlayerGui")
-        self._launcherGui = gui
+        Lib._launcherGui = gui
     end
 
     local launcher = Instance.new("ImageButton")
@@ -172,30 +157,41 @@ local function ensureLauncher(self)
     enableLauncherDrag(launcher)
 
     launcher.MouseButton1Click:Connect(function()
-        if self._currentGui and self._currentGui.Parent then
-            self._currentGui.Enabled = not self._currentGui.Enabled
-        elseif self._lastOpts then
-            self:_spawnWindow(self._lastOpts)
+        if Lib._currentGui and Lib._currentGui.Parent then
+            Lib._currentGui.Enabled = not Lib._currentGui.Enabled
+        elseif Lib._lastOpts then
+            Lib:_spawnWindow(Lib._lastOpts)
         end
     end)
 
-    self._launcherBtn = launcher
+    Lib._launcherBtn = launcher
+end
+
+local function destroyLauncher()
+    if Lib._launcherBtn then
+        if Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
+        Lib._launcherBtn = nil
+    end
+    if Lib._launcherGui then
+        if Lib._launcherGui.Parent then Lib._launcherGui:Destroy() end
+        Lib._launcherGui = nil
+    end
 end
 
 -- ===== Construção da janela =====
 function Lib:_spawnWindow(opts)
     opts = opts or {}
-    if self._singleMode then opts.multi = false end
+    if Lib._singleMode then opts.multi = false end
 
     local player = Players.LocalPlayer
     local theme = merge(DEFAULT_THEME, (opts and opts.theme) or {})
     if opts and opts.size then theme.winSize = opts.size end
 
-    -- Reusar janela no modo single
+    -- reusa janela no modo single
     if not (opts and opts.multi) then
-        if self._currentGui and self._currentGui.Parent then
-            self._currentGui.Enabled = true
-            return self._currentWinObj
+        if Lib._currentGui and Lib._currentGui.Parent then
+            Lib._currentGui.Enabled = true
+            return Lib._currentWinObj
         end
     end
 
@@ -297,10 +293,11 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- ==== LATERAL: botão 100% largura, com ícone (apenas na sidebar) ====
+    -- ==== LATERAL: botões 100% de largura, com ícone maior ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, 0, 0, 38)
+        btn.Position = UDim2.new(0, 0, 0, 0)
         btn.BackgroundColor3 = theme.card
         btn.AutoButtonColor = false
         btn.Text = ""
@@ -308,7 +305,7 @@ function Lib:_spawnWindow(opts)
 
         local ic = Instance.new("ImageLabel", btn)
         ic.BackgroundTransparency = 1
-        ic.Image = iconId or (_G.__SyniXSingleton and _G.__SyniXSingleton.__defaultIcon) or "rbxassetid://14862323455"
+        ic.Image = iconId or "rbxassetid://14862323455"
         ic.Size = UDim2.fromOffset(theme.sideIconSize, theme.sideIconSize)
         ic.Position = UDim2.new(0, 8, 0.5, -math.floor(theme.sideIconSize/2))
         ic.ImageColor3 = Color3.fromRGB(230,230,235)
@@ -335,7 +332,7 @@ function Lib:_spawnWindow(opts)
         Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
     end
 
-    -- ===== Abas e Widgets =====
+    -- ===== Abas / Widgets =====
     local function MakeTab(def)
         local sideBtn = makeSideItem(def.icon, def.name or "Tab")
         sideBtn.Parent = sidebar
@@ -354,7 +351,6 @@ function Lib:_spawnWindow(opts)
             page.CanvasSize = UDim2.new(0,0,0,pageList.AbsoluteContentSize.Y + 8)
         end)
 
-        -- Section
         local function TAddSection(text)
             local s = Instance.new("TextLabel", page)
             s.BackgroundTransparency = 1
@@ -368,16 +364,18 @@ function Lib:_spawnWindow(opts)
             return s
         end
 
-        -- Toggle (SEM ÍCONE) + desc opcional
-        local function TAddToggle(labelText, default, callback, opt)
-            opt = opt or {}
-            local hasDesc = (opt.desc ~= nil)
-            local rowH = hasDesc and (theme.rowHeight + 18) or theme.rowHeight
-
+        local function TAddToggle(iconId, labelText, default, callback)
             local row = Instance.new("Frame", page)
-            row.Size = UDim2.new(1, 0, 0, rowH)
+            row.Size = UDim2.new(1, 0, 0, theme.rowHeight)
             row.BackgroundColor3 = theme.row
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+            local ico = Instance.new("ImageLabel", row)
+            ico.BackgroundTransparency = 1
+            ico.Image = iconId or "rbxassetid://14862323455"
+            ico.Size = UDim2.fromOffset(18,18)
+            ico.Position = UDim2.new(0, 12, 0.5, -9)
+            ico.ImageColor3 = Color3.fromRGB(235,235,240)
 
             local label = Instance.new("TextLabel", row)
             label.BackgroundTransparency = 1
@@ -386,22 +384,9 @@ function Lib:_spawnWindow(opts)
             label.TextColor3 = theme.text
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextScaled = true
-            label.Position = UDim2.new(0, 12, 0, hasDesc and 4 or 2)
-            label.Size = UDim2.new(1, - (theme.toggleSize.X + 46), 0, 22)
+            label.Position = UDim2.new(0, 36, 0, 2)
+            label.Size = UDim2.new(1, - (theme.toggleSize.X + 70), 1, -4)
             Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
-
-            if hasDesc then
-                local sub = Instance.new("TextLabel", row)
-                sub.BackgroundTransparency = 1
-                sub.Text = tostring(opt.desc)
-                sub.Font = Enum.Font.Gotham
-                sub.TextColor3 = theme.text_muted
-                sub.TextXAlignment = Enum.TextXAlignment.Left
-                sub.TextScaled = true
-                sub.Position = UDim2.new(0, 12, 0, 24)
-                sub.Size = UDim2.new(1, - (theme.toggleSize.X + 46), 0, 18)
-                Instance.new("UITextSizeConstraint", sub).MaxTextSize = 12
-            end
 
             local btn = Instance.new("TextButton", row)
             btn.Text = ""
@@ -448,7 +433,6 @@ function Lib:_spawnWindow(opts)
             }
         end
 
-        -- Button (MANTÉM ícone)
         local function TAddButton(iconId, text, callback)
             local row = Instance.new("TextButton", page)
             row.Text = ""
@@ -459,7 +443,7 @@ function Lib:_spawnWindow(opts)
 
             local ico = Instance.new("ImageLabel", row)
             ico.BackgroundTransparency = 1
-            ico.Image = iconId or (_G.__SyniXSingleton and _G.__SyniXSingleton.__defaultIcon) or "rbxassetid://14862323455"
+            ico.Image = iconId or "rbxassetid://14862323455"
             ico.Size = UDim2.fromOffset(18,18)
             ico.Position = UDim2.new(0, 12, 0.5, -9)
             ico.ImageColor3 = Color3.fromRGB(235,235,240)
@@ -478,24 +462,31 @@ function Lib:_spawnWindow(opts)
             row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
         end
 
-        -- Dropdown (SEM ÍCONE) + desc no cabeçalho
-        local function TAddDropdown(labelText, items, default, callback, opt)
-            opt = opt or {}
+        -- ===== Dropdown (cabeçalho fixo no topo; opções expandem abaixo) =====
+        local function TAddDropdown(iconId, labelText, items, default, callback)
             items = items or {}
-            local hasDesc = (opt.desc ~= nil)
-            local capH = hasDesc and (theme.rowHeight + 18) or theme.rowHeight
+            local capH = theme.rowHeight
 
+            -- container
             local row = Instance.new("Frame", page)
-            row.Size = UDim2.new(1, 0, 0, capH)
+            row.Size = UDim2.new(1, 0, 0, capH)  -- fechado: só o cap
             row.BackgroundColor3 = theme.row
             row.ClipsDescendants = true
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
-            -- CAP (sem ícone)
+            -- CAP
             local cap = Instance.new("Frame", row)
             cap.BackgroundTransparency = 1
             cap.Size = UDim2.new(1, 0, 0, capH)
             cap.ZIndex = 2
+
+            local ico = Instance.new("ImageLabel", cap)
+            ico.BackgroundTransparency = 1
+            ico.Image = iconId or "rbxassetid://14862323455"
+            ico.Size = UDim2.fromOffset(18,18)
+            ico.Position = UDim2.new(0, 12, 0.5, -9)
+            ico.ImageColor3 = Color3.fromRGB(235,235,240)
+            ico.ZIndex = 2
 
             local label = Instance.new("TextLabel", cap)
             label.BackgroundTransparency = 1
@@ -504,24 +495,10 @@ function Lib:_spawnWindow(opts)
             label.TextColor3 = theme.text
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextScaled = true
-            label.Position = UDim2.new(0, 12, 0, hasDesc and 4 or 2)
-            label.Size = UDim2.new(1, -180, 0, 22)
+            label.Position = UDim2.new(0, 36, 0, 2)
+            label.Size = UDim2.new(1, -180, 1, -4)
             Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
             label.ZIndex = 2
-
-            if hasDesc then
-                local sub = Instance.new("TextLabel", cap)
-                sub.BackgroundTransparency = 1
-                sub.Text = tostring(opt.desc)
-                sub.Font = Enum.Font.Gotham
-                sub.TextColor3 = theme.text_muted
-                sub.TextXAlignment = Enum.TextXAlignment.Left
-                sub.TextScaled = true
-                sub.Position = UDim2.new(0, 12, 0, 24)
-                sub.Size = UDim2.new(1, -180, 0, 18)
-                Instance.new("UITextSizeConstraint", sub).MaxTextSize = 12
-                sub.ZIndex = 2
-            end
 
             local valueText = Instance.new("TextLabel", cap)
             valueText.BackgroundTransparency = 1
@@ -547,14 +524,14 @@ function Lib:_spawnWindow(opts)
             chevron.ZIndex = 2
 
             -- LISTA
-            local optsF = Instance.new("Frame", row)
-            optsF.BackgroundTransparency = 1
-            optsF.Position = UDim2.new(0, 8, 0, capH)
-            optsF.Size = UDim2.new(1, -16, 0, 0)
-            optsF.ClipsDescendants = true
-            optsF.ZIndex = 1
+            local opts = Instance.new("Frame", row)
+            opts.BackgroundTransparency = 1
+            opts.Position = UDim2.new(0, 8, 0, capH)
+            opts.Size = UDim2.new(1, -16, 0, 0)
+            opts.ClipsDescendants = true
+            opts.ZIndex = 1
 
-            local optsList = Instance.new("UIListLayout", optsF)
+            local optsList = Instance.new("UIListLayout", opts)
             optsList.Padding = UDim.new(0, 6)
             optsList.SortOrder = Enum.SortOrder.LayoutOrder
 
@@ -579,15 +556,15 @@ function Lib:_spawnWindow(opts)
             end
 
             local function populate(list)
-                for _,c in ipairs(optsF:GetChildren()) do
+                for _,c in ipairs(opts:GetChildren()) do
                     if c:IsA("GuiObject") then c:Destroy() end
                 end
                 for _,name in ipairs(list) do
                     local b = makeOption(name)
-                    b.Parent = optsF
+                    b.Parent = opts
                     b.MouseButton1Click:Connect(function()
                         valueText.Text = tostring(name)
-                        doToggle(false)
+                        toggle(false)
                         if callback then task.spawn(function() pcall(callback, name) end) end
                     end)
                 end
@@ -601,20 +578,20 @@ function Lib:_spawnWindow(opts)
             end
 
             local open = false
-            function doToggle(want)
+            function toggle(want)
                 local wantOpen = (want==nil) and (not open) or want
                 open = wantOpen
                 chevron.Text = open and "▲" or "▼"
                 local listH = open and heightForList() or 0
                 Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                     {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
-                Tween:Create(optsF, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                     {Size = UDim2.new(1, -16, 0, listH)}):Play()
             end
 
             cap.InputBegan:Connect(function(i)
                 if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-                    doToggle()
+                    toggle()
                 end
             end)
 
@@ -633,10 +610,10 @@ function Lib:_spawnWindow(opts)
                     populate(items)
                     current = newDefault or items[1]
                     valueText.Text = tostring(current or "")
-                    doToggle(false)
+                    toggle(false)
                 end,
-                Open=function() doToggle(true) end,
-                Close=function() doToggle(false) end
+                Open=function() toggle(true) end,
+                Close=function() toggle(false) end
             }
         end
 
@@ -651,10 +628,9 @@ function Lib:_spawnWindow(opts)
 
         local tab = {}
         function tab:AddSection(text)  return TAddSection(text) end
-        -- NOVAS assinaturas: sem "icon" para Toggle e Dropdown
-        function tab:AddToggle(opt)    return TAddToggle(opt.text, opt.default, opt.callback, opt) end
+        function tab:AddToggle(opt)    return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
         function tab:AddButton(opt)    return TAddButton(opt.icon, opt.text, opt.callback) end
-        function tab:AddDropdown(opt)  return TAddDropdown(opt.text, opt.items, opt.default, opt.callback, opt) end
+        function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
 
         sideBtn.MouseButton1Click:Connect(openThis)
 
@@ -669,7 +645,7 @@ function Lib:_spawnWindow(opts)
     -- posição inicial
     if opts and opts.multi then
         local baseX, baseY, dx, dy = 120, 80, 24, 32
-        local k = (#self._openWindows) % 8
+        local k = (#Lib._openWindows) % 8
         local px, py = baseX + dx*k, baseY + dy*k
         local screen = win.Parent and win.Parent.AbsoluteSize or Vector2.new(1280,720)
         px = math.clamp(px, 0, math.max(0, screen.X - win.AbsoluteSize.X))
@@ -682,15 +658,14 @@ function Lib:_spawnWindow(opts)
     -- header buttons
     btnMin.MouseButton1Click:Connect(function() gui.Enabled = false end)
     btnCls.MouseButton1Click:Connect(function()
-        for i=#self._openWindows,1,-1 do
-            local g = self._openWindows[i]
+        for i=#Lib._openWindows,1,-1 do
+            local g = Lib._openWindows[i]
             if g and g.Parent then g:Destroy() end
-            table.remove(self._openWindows, i)
+            table.remove(Lib._openWindows, i)
         end
-        self._currentWinObj = nil
-        self._currentGui = nil
-        self._lastOpts = nil
-        destroyLauncher(self)
+        Lib._currentWinObj = nil
+        Lib._currentGui = nil
+        destroyLauncher()
         gui:Destroy()
     end)
 
@@ -699,20 +674,20 @@ function Lib:_spawnWindow(opts)
     function winObj:MakeTab(o) return MakeTab(o) end
     function winObj:_getRoots() return gui, win end
 
-    table.insert(self._openWindows, gui)
+    table.insert(Lib._openWindows, gui)
     gui.Destroying:Connect(function()
-        for i,g in ipairs(self._openWindows) do
-            if g == gui then table.remove(self._openWindows, i) break end
+        for i,g in ipairs(Lib._openWindows) do
+            if g == gui then table.remove(Lib._openWindows, i) break end
         end
-        if self._currentGui == gui then
-            self._currentGui, self._currentWinObj = nil, nil
+        if Lib._currentGui == gui then
+            Lib._currentGui, Lib._currentWinObj = nil, nil
         end
     end)
 
     if not (opts and opts.multi) then
-        self._currentGui = gui
-        self._currentWinObj = winObj
-        self._lastOpts = opts
+        Lib._currentGui = gui
+        Lib._currentWinObj = winObj
+        Lib._lastOpts = opts
     end
 
     return winObj
@@ -721,14 +696,11 @@ end
 -- ===== API =====
 function Lib:MakeWindow(opts)
     opts = opts or {}
-    if self._singleMode then opts.multi = false end
-    self._launcherEnabled = not opts.noLauncher
-    if self._launcherEnabled then ensureLauncher(self) else destroyLauncher(self); self._lastOpts = nil end
+    if Lib._singleMode then opts.multi = false end
+    Lib._launcherEnabled = not opts.noLauncher
+    if Lib._launcherEnabled then ensureLauncher() else destroyLauncher(); Lib._lastOpts = nil end
     return self:_spawnWindow(opts)
 end
 
-_G.__SyniXSingleton = setmetatable({
-    __defaultIcon = "rbxassetid://14862323455"  -- usado na sidebar e nos botões
-}, Lib)
-
+_G.__SyniXSingleton = setmetatable({}, Lib)
 return _G.__SyniXSingleton
