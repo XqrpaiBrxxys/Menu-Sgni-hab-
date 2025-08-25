@@ -1,10 +1,10 @@
--- SyniXLib.lua v0.4.1
+-- SyniXLib.lua v0.4.2
 -- UI com Sidebar, Toggle, Button e Dropdown (cabeçalho fixo)
--- - Sidebar sem sobra
--- - Launcher (bolinha) arrastável: para exatamente onde soltar (salva _G.SyniXLauncherPos)
--- - Modo SINGLE window por padrão (evita múltiplas janelas)
--- - Botão X destrói janela + launcher
-print("[SyniXLib] loaded v0.4.1")
+-- - Sidebar sem sobra / ícone maior configurável
+-- - Launcher (bolinha) arrastável e para onde soltar (_G.SyniXLauncherPos)
+-- - Modo SINGLE window (evita duplicar). X fecha tudo (janela + launcher)
+
+print("[SyniXLib] loaded v0.4.2")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -49,6 +49,7 @@ local DEFAULT_THEME = {
     toggleSize   = Vector2.new(84,30),
     knobSize     = Vector2.new(26,26),
 
+    sideIconSize = 28,          -- << tamanho do ícone das abas
     winSize      = UDim2.fromOffset(680,400),
 }
 
@@ -292,7 +293,7 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- ==== LATERAL: botões 100% de largura (sem sobra) ====
+    -- ==== LATERAL: botões 100% de largura, com ícone maior ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, 0, 0, 38)
@@ -305,8 +306,8 @@ function Lib:_spawnWindow(opts)
         local ic = Instance.new("ImageLabel", btn)
         ic.BackgroundTransparency = 1
         ic.Image = iconId or "rbxassetid://14862323455"
-        ic.Size = UDim2.fromOffset(18,18)
-        ic.Position = UDim2.new(0, 10, 0.5, -9)
+        ic.Size = UDim2.fromOffset(theme.sideIconSize, theme.sideIconSize)
+        ic.Position = UDim2.new(0, 8, 0.5, -math.floor(theme.sideIconSize/2))
         ic.ImageColor3 = Color3.fromRGB(230,230,235)
 
         local lb = Instance.new("TextLabel", btn)
@@ -316,8 +317,8 @@ function Lib:_spawnWindow(opts)
         lb.TextXAlignment = Enum.TextXAlignment.Left
         lb.TextColor3 = theme.text
         lb.TextScaled = true
-        lb.Position = UDim2.new(0, 36, 0, 4)
-        lb.Size = UDim2.new(1, -44, 1, -8)
+        lb.Position = UDim2.new(0, 8 + theme.sideIconSize + 8, 0, 4)
+        lb.Size = UDim2.new(1, -(8 + theme.sideIconSize + 8 + 8), 1, -8)
         Instance.new("UITextSizeConstraint", lb).MaxTextSize = 16
         return btn
     end
