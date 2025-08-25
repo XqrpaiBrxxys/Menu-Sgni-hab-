@@ -1,17 +1,19 @@
--- SyniXLib.lua v0.4.3a
--- UI com Sidebar, Toggle, Button e Dropdown (suporta "desc" opcional)
--- - Sidebar sem sobra; ícone das abas maior (theme.sideIconSize)
--- - Launcher (bolinha) arrastável: segue o dedo e para exatamente onde soltar
--- - Janela única por padrão (não duplica); X fecha tudo (janela + launcher)
--- - Dropdown: cabeçalho FIXO, opções abrem por baixo
--- - Você pode mudar o ícone padrão definindo SyniX.__defaultIcon no loader
+-- SyniXLib.lua v0.4.4
+-- UI com Sidebar, Toggle, Button e Dropdown
+-- Mudanças desta versão:
+-- - REMOVIDOS ícones do Toggle e do Dropdown (somente texto + desc)
+-- - Sidebar mantém ícones (configurável por theme.sideIconSize)
+-- - Launcher (bolinha) arrastável, para exatamente onde soltar
+-- - Janela única por padrão; X fecha tudo (janela + launcher)
+-- - Dropdown com cabeçalho fixo, opções abrem por baixo
+-- - Suporta "desc" (descrição) em Toggle e Dropdown
 
 if _G.__SyniXSingleton then
     print("[SyniXLib] reusing singleton")
     return _G.__SyniXSingleton
 end
 
-print("[SyniXLib] loaded v0.4.3a")
+print("[SyniXLib] loaded v0.4.4")
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -295,7 +297,7 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- ==== LATERAL: botão 100% largura, com ícone maior ====
+    -- ==== LATERAL: botão 100% largura, com ícone (apenas na sidebar) ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, 0, 0, 38)
@@ -366,23 +368,16 @@ function Lib:_spawnWindow(opts)
             return s
         end
 
-        -- Toggle (com desc)
-        local function TAddToggle(iconId, labelText, default, callback, opt)
+        -- Toggle (SEM ÍCONE) + desc opcional
+        local function TAddToggle(labelText, default, callback, opt)
             opt = opt or {}
-            local hasDesc = (opt.desc ~= nil) or false
+            local hasDesc = (opt.desc ~= nil)
             local rowH = hasDesc and (theme.rowHeight + 18) or theme.rowHeight
 
             local row = Instance.new("Frame", page)
             row.Size = UDim2.new(1, 0, 0, rowH)
             row.BackgroundColor3 = theme.row
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
-
-            local ico = Instance.new("ImageLabel", row)
-            ico.BackgroundTransparency = 1
-            ico.Image = iconId or (_G.__SyniXSingleton and _G.__SyniXSingleton.__defaultIcon) or "rbxassetid://14862323455"
-            ico.Size = UDim2.fromOffset(18,18)
-            ico.Position = UDim2.new(0, 12, 0, hasDesc and 10 or (rowH/2 - 9))
-            ico.ImageColor3 = Color3.fromRGB(235,235,240)
 
             local label = Instance.new("TextLabel", row)
             label.BackgroundTransparency = 1
@@ -391,8 +386,8 @@ function Lib:_spawnWindow(opts)
             label.TextColor3 = theme.text
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextScaled = true
-            label.Position = UDim2.new(0, 36, 0, hasDesc and 4 or 2)
-            label.Size = UDim2.new(1, - (theme.toggleSize.X + 70), 0, 22)
+            label.Position = UDim2.new(0, 12, 0, hasDesc and 4 or 2)
+            label.Size = UDim2.new(1, - (theme.toggleSize.X + 46), 0, 22)
             Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
 
             if hasDesc then
@@ -403,8 +398,8 @@ function Lib:_spawnWindow(opts)
                 sub.TextColor3 = theme.text_muted
                 sub.TextXAlignment = Enum.TextXAlignment.Left
                 sub.TextScaled = true
-                sub.Position = UDim2.new(0, 36, 0, 24)
-                sub.Size = UDim2.new(1, - (theme.toggleSize.X + 70), 0, 18)
+                sub.Position = UDim2.new(0, 12, 0, 24)
+                sub.Size = UDim2.new(1, - (theme.toggleSize.X + 46), 0, 18)
                 Instance.new("UITextSizeConstraint", sub).MaxTextSize = 12
             end
 
@@ -453,7 +448,7 @@ function Lib:_spawnWindow(opts)
             }
         end
 
-        -- Button
+        -- Button (MANTÉM ícone)
         local function TAddButton(iconId, text, callback)
             local row = Instance.new("TextButton", page)
             row.Text = ""
@@ -483,11 +478,11 @@ function Lib:_spawnWindow(opts)
             row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
         end
 
-        -- Dropdown (com desc no cabeçalho)
-        local function TAddDropdown(iconId, labelText, items, default, callback, opt)
+        -- Dropdown (SEM ÍCONE) + desc no cabeçalho
+        local function TAddDropdown(labelText, items, default, callback, opt)
             opt = opt or {}
             items = items or {}
-            local hasDesc = (opt.desc ~= nil) or false
+            local hasDesc = (opt.desc ~= nil)
             local capH = hasDesc and (theme.rowHeight + 18) or theme.rowHeight
 
             local row = Instance.new("Frame", page)
@@ -496,19 +491,11 @@ function Lib:_spawnWindow(opts)
             row.ClipsDescendants = true
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
-            -- CAP
+            -- CAP (sem ícone)
             local cap = Instance.new("Frame", row)
             cap.BackgroundTransparency = 1
             cap.Size = UDim2.new(1, 0, 0, capH)
             cap.ZIndex = 2
-
-            local ico = Instance.new("ImageLabel", cap)
-            ico.BackgroundTransparency = 1
-            ico.Image = iconId or (_G.__SyniXSingleton and _G.__SyniXSingleton.__defaultIcon) or "rbxassetid://14862323455"
-            ico.Size = UDim2.fromOffset(18,18)
-            ico.Position = UDim2.new(0, 12, 0, hasDesc and 10 or (capH/2 - 9))
-            ico.ImageColor3 = Color3.fromRGB(235,235,240)
-            ico.ZIndex = 2
 
             local label = Instance.new("TextLabel", cap)
             label.BackgroundTransparency = 1
@@ -517,7 +504,7 @@ function Lib:_spawnWindow(opts)
             label.TextColor3 = theme.text
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextScaled = true
-            label.Position = UDim2.new(0, 36, 0, hasDesc and 4 or 2)
+            label.Position = UDim2.new(0, 12, 0, hasDesc and 4 or 2)
             label.Size = UDim2.new(1, -180, 0, 22)
             Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
             label.ZIndex = 2
@@ -530,7 +517,7 @@ function Lib:_spawnWindow(opts)
                 sub.TextColor3 = theme.text_muted
                 sub.TextXAlignment = Enum.TextXAlignment.Left
                 sub.TextScaled = true
-                sub.Position = UDim2.new(0, 36, 0, 24)
+                sub.Position = UDim2.new(0, 12, 0, 24)
                 sub.Size = UDim2.new(1, -180, 0, 18)
                 Instance.new("UITextSizeConstraint", sub).MaxTextSize = 12
                 sub.ZIndex = 2
@@ -560,14 +547,14 @@ function Lib:_spawnWindow(opts)
             chevron.ZIndex = 2
 
             -- LISTA
-            local opts = Instance.new("Frame", row)
-            opts.BackgroundTransparency = 1
-            opts.Position = UDim2.new(0, 8, 0, capH)
-            opts.Size = UDim2.new(1, -16, 0, 0)
-            opts.ClipsDescendants = true
-            opts.ZIndex = 1
+            local optsF = Instance.new("Frame", row)
+            optsF.BackgroundTransparency = 1
+            optsF.Position = UDim2.new(0, 8, 0, capH)
+            optsF.Size = UDim2.new(1, -16, 0, 0)
+            optsF.ClipsDescendants = true
+            optsF.ZIndex = 1
 
-            local optsList = Instance.new("UIListLayout", opts)
+            local optsList = Instance.new("UIListLayout", optsF)
             optsList.Padding = UDim.new(0, 6)
             optsList.SortOrder = Enum.SortOrder.LayoutOrder
 
@@ -592,15 +579,15 @@ function Lib:_spawnWindow(opts)
             end
 
             local function populate(list)
-                for _,c in ipairs(opts:GetChildren()) do
+                for _,c in ipairs(optsF:GetChildren()) do
                     if c:IsA("GuiObject") then c:Destroy() end
                 end
                 for _,name in ipairs(list) do
                     local b = makeOption(name)
-                    b.Parent = opts
+                    b.Parent = optsF
                     b.MouseButton1Click:Connect(function()
                         valueText.Text = tostring(name)
-                        toggle(false)
+                        doToggle(false)
                         if callback then task.spawn(function() pcall(callback, name) end) end
                     end)
                 end
@@ -614,14 +601,14 @@ function Lib:_spawnWindow(opts)
             end
 
             local open = false
-            local function doToggle(want)
+            function doToggle(want)
                 local wantOpen = (want==nil) and (not open) or want
                 open = wantOpen
                 chevron.Text = open and "▲" or "▼"
                 local listH = open and heightForList() or 0
                 Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                     {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
-                Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                Tween:Create(optsF, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                     {Size = UDim2.new(1, -16, 0, listH)}):Play()
             end
 
@@ -664,9 +651,10 @@ function Lib:_spawnWindow(opts)
 
         local tab = {}
         function tab:AddSection(text)  return TAddSection(text) end
-        function tab:AddToggle(opt)    return TAddToggle(opt.icon, opt.text, opt.default, opt.callback, opt) end
+        -- NOVAS assinaturas: sem "icon" para Toggle e Dropdown
+        function tab:AddToggle(opt)    return TAddToggle(opt.text, opt.default, opt.callback, opt) end
         function tab:AddButton(opt)    return TAddButton(opt.icon, opt.text, opt.callback) end
-        function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback, opt) end
+        function tab:AddDropdown(opt)  return TAddDropdown(opt.text, opt.items, opt.default, opt.callback, opt) end
 
         sideBtn.MouseButton1Click:Connect(openThis)
 
@@ -739,9 +727,8 @@ function Lib:MakeWindow(opts)
     return self:_spawnWindow(opts)
 end
 
--- singleton com ícone padrão (pode mudar no loader: SyniX.__defaultIcon = "rbxassetid://ID")
 _G.__SyniXSingleton = setmetatable({
-    __defaultIcon = "rbxassetid://14862323455"
+    __defaultIcon = "rbxassetid://14862323455"  -- usado na sidebar e nos botões
 }, Lib)
 
 return _G.__SyniXSingleton
