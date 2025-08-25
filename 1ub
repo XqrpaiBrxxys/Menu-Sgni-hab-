@@ -1,10 +1,10 @@
--- SyniXLib.lua v0.4.2
+-- SyniXLib.lua v0.4.3
 -- UI com Sidebar, Toggle, Button e Dropdown (cabeçalho fixo)
 -- - Sidebar sem sobra / ícone maior configurável
 -- - Launcher (bolinha) arrastável e para onde soltar (_G.SyniXLauncherPos)
 -- - Modo SINGLE window (evita duplicar). X fecha tudo (janela + launcher)
 
-print("[SyniXLib] loaded v0.4.2")
+print("[SyniXLib] loaded v0.4.3")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -462,10 +462,11 @@ function Lib:_spawnWindow(opts)
             row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
         end
 
-        -- ===== Dropdown (cabeçalho fixo no topo; opções expandem abaixo) =====
+        -- ===== Dropdown (corrigido: toggle local e clique em todo cabeçalho) =====
         local function TAddDropdown(iconId, labelText, items, default, callback)
             items = items or {}
             local capH = theme.rowHeight
+            local maxVisible = 8 -- rolagem a partir de 8 itens (opcional)
 
             -- container
             local row = Instance.new("Frame", page)
@@ -523,17 +524,22 @@ function Lib:_spawnWindow(opts)
             Instance.new("UITextSizeConstraint", chevron).MaxTextSize = 16
             chevron.ZIndex = 2
 
-            -- LISTA
-            local opts = Instance.new("Frame", row)
+            -- LISTA em ScrollingFrame (para listas grandes)
+            local opts = Instance.new("ScrollingFrame", row)
             opts.BackgroundTransparency = 1
             opts.Position = UDim2.new(0, 8, 0, capH)
             opts.Size = UDim2.new(1, -16, 0, 0)
+            opts.ScrollBarThickness = 6
             opts.ClipsDescendants = true
             opts.ZIndex = 1
+            opts.CanvasSize = UDim2.new(0,0,0,0)
 
             local optsList = Instance.new("UIListLayout", opts)
             optsList.Padding = UDim.new(0, 6)
             optsList.SortOrder = Enum.SortOrder.LayoutOrder
+            optsList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
+            end)
 
             local function makeOption(txt)
                 local b = Instance.new("TextButton")
@@ -555,6 +561,26 @@ function Lib:_spawnWindow(opts)
                 return b
             end
 
+            local function heightForList()
+                local count = #items
+                if count == 0 then return 0 end
+                local fullH = (count * 32) + ((count-1) * 6) + 8
+                local maxH  = (maxVisible * 32) + ((maxVisible-1) * 6) + 8
+                return math.min(fullH, maxH)
+            end
+
+            local open = false
+            local function toggle(want)  -- << agora é local (sem poluir global)
+                local wantOpen = (want==nil) and (not open) or want
+                open = wantOpen
+                chevron.Text = open and "▲" or "▼"
+                local listH = open and heightForList() or 0
+                Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
+                Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    {Size = UDim2.new(1, -16, 0, listH)}):Play()
+            end
+
             local function populate(list)
                 for _,c in ipairs(opts:GetChildren()) do
                     if c:IsA("GuiObject") then c:Destroy() end
@@ -568,41 +594,35 @@ function Lib:_spawnWindow(opts)
                         if callback then task.spawn(function() pcall(callback, name) end) end
                     end)
                 end
+                -- força recálculo do CanvasSize
+                task.defer(function()
+                    opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
+                end)
             end
             populate(items)
 
-            local function heightForList()
-                local count = #items
-                if count == 0 then return 0 end
-                return (count * 32) + ((count-1) * 6) + 8
+            -- abrir/fechar ao clicar em QUALQUER parte do cabeçalho
+            local function bindToggleClick(guiObj)
+                guiObj.InputBegan:Connect(function(i)
+                    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+                        toggle()
+                    end
+                end)
             end
-
-            local open = false
-            function toggle(want)
-                local wantOpen = (want==nil) and (not open) or want
-                open = wantOpen
-                chevron.Text = open and "▲" or "▼"
-                local listH = open and heightForList() or 0
-                Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
-                Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, -16, 0, listH)}):Play()
-            end
-
-            cap.InputBegan:Connect(function(i)
-                if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-                    toggle()
-                end
-            end)
+            bindToggleClick(cap)
+            bindToggleClick(label)
+            bindToggleClick(valueText)
+            bindToggleClick(chevron)
+            bindToggleClick(ico)
 
             local current = default or items[1]
             if current then valueText.Text = tostring(current) end
 
             return {
                 Set=function(v)
-                    current = v
-                    valueText.Text = tostring(v)
-                    if callback then pcall(callback, v) end
+                    current=v
+                    valueText.Text=tostring(v)
+                    if callback then pcall(callback,v) end
                 end,
                 Get=function() return current end,
                 SetItems=function(newItems, newDefault)
