@@ -1,13 +1,11 @@
--- SyniXLib.lua v0.4.5
--- UI com Sidebar, Toggle, Button, Dropdown e Painel de Config
+-- SyniXLib.lua v0.4.6
 -- Ajustes:
---  * Launcher maior (52x52)
---  * Botão de Config com "⚙" (sempre na frente)
---  * Painel de Config reorganizado: botão mostra tecla atual e captura nova
---  * Botão "Copiar Discord"
---  * API compatível com 0.4.2/0.4.4
+-- * Settings em inglês; layout do keybind arrumado
+-- * Toggle "Show Floating Button" no painel de Settings
+-- * Créditos sem linha "Discord: ...", botão "Copy Discord"
+-- * Launcher show/hide pelo toggle (sempre ON ao abrir Settings)
 
-print("[SyniXLib] loaded v0.4.5")
+print("[SyniXLib] loaded v0.4.6")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -27,7 +25,7 @@ Lib._currentWinObj   = nil
 Lib._lastOpts        = nil
 Lib._openWindows     = {}
 
--- ===== Comportamento =====
+-- Controle do keybind/minimize
 Lib._singleMode      = true
 Lib._minimizeKey     = Enum.KeyCode.P
 Lib._waitingKeybind  = false
@@ -88,7 +86,7 @@ local function enableDrag(frame, clampToScreen)
     end)
 end
 
--- Drag grudado no dedo (launcher) sem snap/dock
+-- Drag grudado no dedo (launcher)
 local function enableLauncherDrag(btn)
     btn.Active = true
     local dragging = false
@@ -102,7 +100,7 @@ local function enableLauncherDrag(btn)
             i.Changed:Connect(function()
                 if i.UserInputState==Enum.UserInputState.End then
                     dragging = false
-                    _G.SyniXLauncherPos = btn.Position -- salva onde soltou
+                    _G.SyniXLauncherPos = btn.Position
                 end
             end)
         end
@@ -173,13 +171,13 @@ local function destroyLauncher()
     if Lib._launcherGui then if Lib._launcherGui.Parent then Lib._launcherGui:Destroy() end Lib._launcherGui=nil end
 end
 
--- ===== Painel de Config =====
-local function buildConfigPanel(gui, theme, opts)
+-- ===== Painel de Settings =====
+local function buildSettingsPanel(gui, theme, opts)
     local discordInvite = (opts and opts.discordInvite) or "https://discord.gg/SEU-LINK"
-    local creditsText   = (opts and opts.creditsText)   or "Créditos: SyniX Hub"
+    local creditsText   = (opts and opts.creditsText)   or "Credits"
 
     local overlay = Instance.new("Frame")
-    overlay.Name = "SyniX_ConfigOverlay"
+    overlay.Name = "SyniX_SettingsOverlay"
     overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
     overlay.BackgroundTransparency = 0.35
     overlay.Size = UDim2.fromScale(1,1)
@@ -188,9 +186,9 @@ local function buildConfigPanel(gui, theme, opts)
     overlay.Parent = gui
 
     local panel = Instance.new("Frame")
-    panel.Name = "ConfigPanel"
-    panel.Size = UDim2.fromOffset(420, 260)
-    panel.Position = UDim2.new(0.5, -210, 0.5, -130)
+    panel.Name = "SettingsPanel"
+    panel.Size = UDim2.fromOffset(440, 300)
+    panel.Position = UDim2.new(0.5, -220, 0.5, -150)
     panel.BackgroundColor3 = theme.bg_panel
     panel.ZIndex = 6001
     Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
@@ -199,7 +197,7 @@ local function buildConfigPanel(gui, theme, opts)
 
     local title = Instance.new("TextLabel", panel)
     title.BackgroundTransparency = 1
-    title.Text = "SyniX | Configurações"
+    title.Text = "SyniX | Settings"
     title.Font = Enum.Font.GothamBlack
     title.TextScaled = true
     title.TextColor3 = theme.text
@@ -208,26 +206,25 @@ local function buildConfigPanel(gui, theme, opts)
     title.ZIndex = 6002
     Instance.new("UITextSizeConstraint", title).MaxTextSize = 22
 
-    -- Card da tecla
+    -- Card: Keybind
     local keyCard = Instance.new("Frame", panel)
     keyCard.BackgroundColor3 = theme.card
-    keyCard.Size = UDim2.new(1, -32, 0, 76)
+    keyCard.Size = UDim2.new(1, -32, 0, 80)
     keyCard.Position = UDim2.new(0, 16, 0, 52)
     keyCard.ZIndex = 6001
     Instance.new("UICorner", keyCard).CornerRadius = UDim.new(0,10)
 
     local kLabel = Instance.new("TextLabel", keyCard)
     kLabel.BackgroundTransparency = 1
-    kLabel.Text = "Tecla para Minimizar (PC)"
+    kLabel.Text = "Minimize Menu Key (PC)"
     kLabel.Font = Enum.Font.Gotham
     kLabel.TextScaled = true
     kLabel.TextColor3 = theme.text
-    kLabel.Position = UDim2.new(0, 12, 0, 8)
-    kLabel.Size = UDim2.new(1, -140, 0, 26)
+    kLabel.Position = UDim2.new(0, 14, 0, 10)
+    kLabel.Size = UDim2.new(1, -170, 0, 26)
     kLabel.ZIndex = 6002
     Instance.new("UITextSizeConstraint", kLabel).MaxTextSize = 16
 
-    -- Botão que exibe a tecla atual (aparece aqui a letra)
     local keyBtn = Instance.new("TextButton", keyCard)
     keyBtn.Text = (Lib._minimizeKey and Lib._minimizeKey.Name) or "P"
     keyBtn.Font = Enum.Font.GothamBold
@@ -236,57 +233,123 @@ local function buildConfigPanel(gui, theme, opts)
     keyBtn.BackgroundColor3 = theme.row
     keyBtn.AutoButtonColor = true
     keyBtn.Size = UDim2.fromOffset(160, 36)
-    keyBtn.Position = UDim2.new(1, -172, 0.5, -18)
+    keyBtn.Position = UDim2.new(1, -174, 0.5, -18)
     keyBtn.ZIndex = 6002
     Instance.new("UICorner", keyBtn).CornerRadius = UDim.new(0,8)
-    local kts = Instance.new("UITextSizeConstraint", keyBtn); kts.MaxTextSize = 18
+    Instance.new("UITextSizeConstraint", keyBtn).MaxTextSize = 18
 
-    -- Créditos
+    -- Card: Toggle Show Launcher
+    local togCard = Instance.new("Frame", panel)
+    togCard.BackgroundColor3 = theme.card
+    togCard.Size = UDim2.new(1, -32, 0, 64)
+    togCard.Position = UDim2.new(0, 16, 0, 140)
+    togCard.ZIndex = 6001
+    Instance.new("UICorner", togCard).CornerRadius = UDim.new(0,10)
+
+    local tLabel = Instance.new("TextLabel", togCard)
+    tLabel.BackgroundTransparency = 1
+    tLabel.Text = "Show Floating Button"
+    tLabel.Font = Enum.Font.Gotham
+    tLabel.TextScaled = true
+    tLabel.TextColor3 = theme.text
+    tLabel.Position = UDim2.new(0, 14, 0, 6)
+    tLabel.Size = UDim2.new(1, -170, 1, -12)
+    tLabel.ZIndex = 6002
+    Instance.new("UITextSizeConstraint", tLabel).MaxTextSize = 16
+
+    local tBtn = Instance.new("TextButton", togCard)
+    tBtn.Text = ""
+    tBtn.AutoButtonColor = false
+    tBtn.Size = UDim2.fromOffset(DEFAULT_THEME.toggleSize.X, DEFAULT_THEME.toggleSize.Y)
+    tBtn.Position = UDim2.new(1, -(DEFAULT_THEME.toggleSize.X + 12), 0.5, -math.floor(DEFAULT_THEME.toggleSize.Y/2))
+    tBtn.BackgroundColor3 = DEFAULT_THEME.toggle_on -- sempre começa ON ao abrir o painel
+    tBtn.ClipsDescendants = true
+    tBtn.ZIndex = 6002
+    Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1,0)
+
+    local knob = Instance.new("Frame", tBtn)
+    knob.Size = UDim2.fromOffset(DEFAULT_THEME.knobSize.X, DEFAULT_THEME.knobSize.Y)
+    knob.Position = UDim2.new(0, math.max(2, DEFAULT_THEME.toggleSize.X - DEFAULT_THEME.knobSize.X - 2), 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2))
+    knob.BackgroundColor3 = DEFAULT_THEME.knob_on
+    knob.ZIndex = 6003
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+
+    local function paintToggle(v)
+        if v then
+            Tween:Create(tBtn,  TweenInfo.new(0.12), {BackgroundColor3 = DEFAULT_THEME.toggle_on}):Play()
+            Tween:Create(knob, TweenInfo.new(0.12), {Position = UDim2.new(0, math.max(2, DEFAULT_THEME.toggleSize.X - DEFAULT_THEME.knobSize.X - 2), 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2)), BackgroundColor3 = DEFAULT_THEME.knob_on}):Play()
+        else
+            Tween:Create(tBtn,  TweenInfo.new(0.12), {BackgroundColor3 = DEFAULT_THEME.toggle_off}):Play()
+            Tween:Create(knob, TweenInfo.new(0.12), {Position = UDim2.new(0, 2, 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2)), BackgroundColor3 = DEFAULT_THEME.knob_off}):Play()
+        end
+    end
+
+    local toggleValue = true
+    local function applyLauncherVisibility()
+        if Lib._launcherBtn then Lib._launcherBtn.Visible = toggleValue end
+        if toggleValue and not Lib._launcherBtn then ensureLauncher() end
+    end
+
+    tBtn.MouseButton1Click:Connect(function()
+        toggleValue = not toggleValue
+        paintToggle(toggleValue)
+        applyLauncherVisibility()
+    end)
+
+    -- Créditos (uma linha)
     local cred = Instance.new("TextLabel", panel)
     cred.BackgroundTransparency = 1
-    cred.Text = creditsText .. "\nDiscord: " .. discordInvite
+    cred.Text = creditsText
     cred.Font = Enum.Font.Gotham
     cred.TextScaled = true
     cred.TextColor3 = theme.text_muted
-    cred.Position = UDim2.new(0, 16, 0, 138)
-    cred.Size = UDim2.new(1, -32, 0, 52)
+    cred.Position = UDim2.new(0, 16, 0, 210)
+    cred.Size = UDim2.new(1, -32, 0, 24)
     cred.ZIndex = 6002
     Instance.new("UITextSizeConstraint", cred).MaxTextSize = 16
 
-    -- Botão copiar discord
+    -- Botões inferiores
     local copyBtn = Instance.new("TextButton", panel)
-    copyBtn.Text = "Copiar Discord"
+    copyBtn.Text = "Copy Discord"
     copyBtn.Font = Enum.Font.GothamBold
     copyBtn.TextScaled = true
     copyBtn.TextColor3 = theme.text
     copyBtn.BackgroundColor3 = theme.row
     copyBtn.AutoButtonColor = true
-    copyBtn.Size = UDim2.fromOffset(150, 36)
+    copyBtn.Size = UDim2.fromOffset(160, 38)
     copyBtn.Position = UDim2.new(0, 16, 1, -46)
     copyBtn.ZIndex = 6002
     Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0,8)
     Instance.new("UITextSizeConstraint", copyBtn).MaxTextSize = 18
 
     local closeBtn = Instance.new("TextButton", panel)
-    closeBtn.Text = "Fechar"
+    closeBtn.Text = "Close"
     closeBtn.Font = Enum.Font.GothamBold
     closeBtn.TextScaled = true
     closeBtn.TextColor3 = theme.text
     closeBtn.BackgroundColor3 = theme.row
-    closeBtn.Size = UDim2.fromOffset(110, 36)
-    closeBtn.Position = UDim2.new(1, -126, 1, -46)
+    closeBtn.Size = UDim2.fromOffset(120, 38)
+    closeBtn.Position = UDim2.new(1, -136, 1, -46)
     closeBtn.ZIndex = 6002
     Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,8)
     Instance.new("UITextSizeConstraint", closeBtn).MaxTextSize = 18
 
-    local function showOverlay(v) overlay.Visible = v; overlay.Active = v end
+    local function showOverlay(v)
+        overlay.Visible = v; overlay.Active = v
+        if v then
+            -- Sempre ligar o toggle e mostrar a bolinha ao abrir
+            toggleValue = true
+            paintToggle(true)
+            applyLauncherVisibility()
+        end
+    end
     closeBtn.MouseButton1Click:Connect(function() showOverlay(false) end)
 
     -- captura de tecla
     keyBtn.MouseButton1Click:Connect(function()
         if Lib._waitingKeybind then return end
         Lib._waitingKeybind = true
-        keyBtn.Text = "Pressione uma tecla..."
+        keyBtn.Text = "Press any key..."
         local conn
         conn = UIS.InputBegan:Connect(function(input, gpe)
             if gpe then return end
@@ -301,13 +364,8 @@ local function buildConfigPanel(gui, theme, opts)
 
     copyBtn.MouseButton1Click:Connect(function()
         local ok = pcall(function() setclipboard(discordInvite) end)
-        if ok then
-            copyBtn.Text = "Copiado!"
-            task.delay(1.2, function() copyBtn.Text = "Copiar Discord" end)
-        else
-            copyBtn.Text = "Falhou :("
-            task.delay(1.2, function() copyBtn.Text = "Copiar Discord" end)
-        end
+        if ok then copyBtn.Text = "Copied!"; task.delay(1.2, function() copyBtn.Text = "Copy Discord" end)
+        else copyBtn.Text = "Failed :("; task.delay(1.2, function() copyBtn.Text = "Copy Discord" end) end
     end)
 
     -- Fechar clicando fora
@@ -334,6 +392,7 @@ function Lib:_spawnWindow(opts)
     local theme = merge(DEFAULT_THEME, (opts and opts.theme) or {})
     if opts and opts.size then theme.winSize = opts.size end
 
+    -- reusa janela
     if not (opts and opts.multi) then
         if Lib._currentGui and Lib._currentGui.Parent then
             Lib._currentGui.Enabled = true
@@ -402,7 +461,7 @@ function Lib:_spawnWindow(opts)
     local btnMin = mkHeadBtn("-", 21); btnMin.Parent = header; btnMin.Size = UDim2.fromOffset(32,26); btnMin.Position = UDim2.new(1,-74,0.5,-13)
     local btnCls = mkHeadBtn("X", 21); btnCls.Parent = header; btnCls.Size = UDim2.fromOffset(32,26); btnCls.Position = UDim2.new(1,-38,0.5,-13)
 
-    -- Botão de CONFIG (sempre na frente) usando unicode "⚙"
+    -- Botão de Settings (⚙) sempre na frente
     local configBtn = Instance.new("TextButton")
     configBtn.Name = "ConfigButton"
     configBtn.Text = "⚙"
@@ -411,7 +470,7 @@ function Lib:_spawnWindow(opts)
     configBtn.TextColor3 = theme.text
     configBtn.BackgroundTransparency = 1
     configBtn.Size = UDim2.fromOffset(24, 24)
-    configBtn.Position = UDim2.new(1, -112, 0.5, -12) -- à esquerda do '-'
+    configBtn.Position = UDim2.new(1, -112, 0.5, -12)
     configBtn.ZIndex = 2000
     configBtn.Parent = header
     Instance.new("UITextSizeConstraint", configBtn).MaxTextSize = 20
@@ -423,7 +482,6 @@ function Lib:_spawnWindow(opts)
     body.Size = UDim2.new(1, -12, 1, -68)
     body.ZIndex = 10
 
-    -- Sidebar
     local sidebar = Instance.new("ScrollingFrame", body)
     sidebar.Name = "Sidebar"
     sidebar.BackgroundColor3 = theme.bg_sidebar
@@ -433,15 +491,12 @@ function Lib:_spawnWindow(opts)
     sidebar.ZIndex = 11
     Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,10)
     local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
-
     local sList = Instance.new("UIListLayout", sidebar)
-    sList.Padding = UDim.new(0,4)
-    sList.SortOrder = Enum.SortOrder.LayoutOrder
+    sList.Padding = UDim.new(0,4); sList.SortOrder = Enum.SortOrder.LayoutOrder
     sList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         sidebar.CanvasSize = UDim2.new(0,0,0, sList.AbsoluteContentSize.Y + 6)
     end)
 
-    -- Content
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
     content.Size = UDim2.new(1, -(theme.sidebarWidth+6), 1, 0)
@@ -470,7 +525,6 @@ function Lib:_spawnWindow(opts)
         btn.Text = ""
         btn.ZIndex = 12
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-
         local ic = Instance.new("ImageLabel", btn)
         ic.BackgroundTransparency = 1
         ic.Image = iconId or "rbxassetid://14862323455"
@@ -478,7 +532,6 @@ function Lib:_spawnWindow(opts)
         ic.Position = UDim2.new(0, 8, 0.5, -math.floor(theme.sideIconSize/2))
         ic.ImageColor3 = Color3.fromRGB(230,230,235)
         ic.ZIndex = 13
-
         local lb = Instance.new("TextLabel", btn)
         lb.BackgroundTransparency = 1
         lb.Text = text
@@ -502,7 +555,6 @@ function Lib:_spawnWindow(opts)
         Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
     end
 
-    -- ===== Abas / Widgets =====
     local function MakeTab(def)
         local sideBtn = makeSideItem(def.icon, def.name or "Tab")
         sideBtn.Parent = sidebar
@@ -571,20 +623,17 @@ function Lib:_spawnWindow(opts)
             knob.BackgroundColor3 = theme.knob_off
             knob.ZIndex = 15
             Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-            local kS = Instance.new("UIStroke", knob); kS.Transparency = 0.7; kS.Color = Color3.fromRGB(0,0,0)
 
             local offX, onX = 2, math.max(2, theme.toggleSize.X - theme.knobSize.X - 2)
             local value = default and true or false
 
             local function paint(v)
                 if v then
-                    Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_on}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                        {Position = UDim2.new(0, onX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_on}):Play()
+                    Tween:Create(btn, TweenInfo.new(0.14), {BackgroundColor3 = theme.toggle_on}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, onX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_on}):Play()
                 else
-                    Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_off}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                        {Position = UDim2.new(0, offX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_off}):Play()
+                    Tween:Create(btn, TweenInfo.new(0.14), {BackgroundColor3 = theme.toggle_off}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, offX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_off}):Play()
                 end
             end
             paint(value)
@@ -730,10 +779,8 @@ function Lib:_spawnWindow(opts)
                 open = wantOpen
                 chevron.Text = open and "▲" or "▼"
                 local listH = open and heightForList() or 0
-                Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
-                Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, -16, 0, listH)}):Play()
+                Tween:Create(row,  TweenInfo.new(0.16), {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
+                Tween:Create(opts, TweenInfo.new(0.16), {Size = UDim2.new(1, -16, 0, listH)}):Play()
             end
 
             local function populate(list)
@@ -749,9 +796,7 @@ function Lib:_spawnWindow(opts)
                         if callback then task.spawn(function() pcall(callback, name) end) end
                     end)
                 end
-                task.defer(function()
-                    opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
-                end)
+                task.defer(function() opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y) end)
             end
             populate(items)
 
@@ -769,10 +814,8 @@ function Lib:_spawnWindow(opts)
                 Set=function(v) current=v; valueText.Text=tostring(v); if callback then pcall(callback,v) end end,
                 Get=function() return current end,
                 SetItems=function(newItems, newDefault)
-                    items = newItems or {}
-                    populate(items)
-                    current = newDefault or items[1]
-                    valueText.Text = tostring(current or ""); toggle(false)
+                    items = newItems or {}; populate(items)
+                    current = newDefault or items[1]; valueText.Text = tostring(current or ""); toggle(false)
                 end,
                 Open=function() toggle(true) end, Close=function() toggle(false) end
             }
@@ -812,12 +855,11 @@ function Lib:_spawnWindow(opts)
         win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
     end
 
-    -- Painel de config
-    local cfg = buildConfigPanel(gui, theme, opts)
-    -- Botão ⚙ sempre na frente
-    configBtn.MouseButton1Click:Connect(function() cfg.Show() end)
+    -- Settings panel
+    local settings = buildSettingsPanel(gui, theme, opts)
+    configBtn.MouseButton1Click:Connect(function() settings.Show() end)
 
-    -- tecla global para minimizar
+    -- key global para minimizar
     local keyConn = UIS.InputBegan:Connect(function(input, gpe)
         if gpe then return end
         if Lib._waitingKeybind then return end
