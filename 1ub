@@ -1,11 +1,8 @@
--- SyniXLib.lua v0.4.4
--- UI com Sidebar, Toggle, Button, Dropdown e Painel de Settings
--- - Engrenagem (config), minimizar com animação e fechar tudo
--- - Launcher arrastável (bolinha); toggle pra exibir/ocultar no Settings
--- - SINGLE window por padrão (evita duplicações)
+-- SyniXLib.lua v0.4.5 (responsive)
+-- Ajustes: tamanho responsivo da janela + modal; launcher refinado
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
-print("[SyniXLib] loaded v0.4.4")
+print("[SyniXLib] loaded v0.4.5")
 
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
@@ -22,7 +19,7 @@ Lib._currentGui, Lib._currentWinObj = nil, nil
 Lib._lastOpts = nil
 Lib._openWindows = {}
 Lib._settingsModal = nil
-Lib._minKey = Enum.KeyCode.P -- tecla padrão para minimizar
+Lib._minKey = Enum.KeyCode.P
 
 -- ===== Comportamento =====
 Lib._singleMode   = true
@@ -50,6 +47,7 @@ local DEFAULT_THEME = {
     knobSize     = Vector2.new(26,26),
 
     sideIconSize = 28,
+    -- winSize será recalculado de modo responsivo
     winSize      = UDim2.fromOffset(700,420),
 }
 
@@ -91,7 +89,6 @@ local function enableDrag(frame, clampToScreen)
     end)
 end
 
--- Drag do launcher grudado no dedo
 local function enableLauncherDrag(btn)
     btn.Active = true
     local dragging = false
@@ -125,6 +122,28 @@ local function enableLauncherDrag(btn)
     end)
 end
 
+-- ===== Responsividade =====
+local function fitWindowToScreen(gui, win, theme)
+    local screen = gui.AbsoluteSize
+    local margin = 24
+    local minW, minH = 620, 420
+    local targW = math.floor(math.max(minW, math.min(screen.X - margin*2, screen.X * 0.72)))
+    local targH = math.floor(math.max(minH, math.min(screen.Y - margin*2, screen.Y * 0.70)))
+    win.Size = UDim2.fromOffset(targW, targH)
+    win.Position = UDim2.new(0.5, -targW/2, 0.5, -targH/2)
+    theme.winSize = win.Size
+end
+
+local function fitModal(modal, gui)
+    if not (modal and modal.Parent) then return end
+    local screen = gui.AbsoluteSize
+    local margin = 48
+    local w = math.floor(math.min(760, screen.X - margin*2))
+    local h = math.floor(math.min(420, screen.Y - margin*2))
+    modal.Size = UDim2.fromOffset(w, h)
+    modal.Position = UDim2.new(0.5, -w/2, 0.5, -h/2)
+end
+
 -- ===== Launcher =====
 local function ensureLauncher()
     if not Lib._launcherEnabled then return end
@@ -147,8 +166,8 @@ local function ensureLauncher()
     local launcher = Instance.new("ImageButton")
     launcher.Name = "Launcher"
     launcher.Image = "rbxassetid://14862323455"
-    launcher.Size = UDim2.fromOffset(60,60) -- tamanho “padrão bom”
-    launcher.Position = _G.SyniXLauncherPos or UDim2.new(0, 14, 1, -80)
+    launcher.Size = UDim2.fromOffset(56,56) -- levemente menor que v0.4.4
+    launcher.Position = _G.SyniXLauncherPos or UDim2.new(0, 16, 1, -88)
     launcher.BackgroundColor3 = Color3.fromRGB(26,28,36)
     launcher.BorderSizePixel = 0
     launcher.AutoButtonColor = true
@@ -183,10 +202,11 @@ local function destroyLauncher()
     end
 end
 
--- ===== Painel de Settings (completo) =====
+-- ===== Settings =====
 local function buildSettingsPanel()
     if Lib._settingsModal and Lib._settingsModal.Parent then
         Lib._settingsModal.Visible = true
+        fitModal(Lib._settingsModal, Lib._currentGui)
         return
     end
 
@@ -195,13 +215,12 @@ local function buildSettingsPanel()
 
     local modal = Instance.new("Frame")
     modal.Name = "SyniX_Settings"
-    modal.Size = UDim2.new(0, 760, 0, 420)
-    modal.Position = UDim2.new(0.5, -380, 0.5, -210)
     modal.BackgroundColor3 = theme.bg_panel
     modal.ZIndex = 999
     Instance.new("UICorner", modal).CornerRadius = UDim.new(0,18)
     Instance.new("UIStroke", modal).Transparency = .2
     modal.Parent = gui
+    fitModal(modal, gui)
 
     local title = Instance.new("TextLabel", modal)
     title.BackgroundTransparency = 1
@@ -215,7 +234,7 @@ local function buildSettingsPanel()
 
     local contentY = 70
 
-    -- Row 1: Minimize Menu Key (PC)
+    -- Row 1
     local row1 = Instance.new("Frame", modal)
     row1.BackgroundColor3 = theme.card
     row1.Size = UDim2.new(1, -60, 0, 76)
@@ -231,7 +250,7 @@ local function buildSettingsPanel()
     kLabel.TextXAlignment = Enum.TextXAlignment.Left
     kLabel.Position = UDim2.new(0, 14, 0.5, -14)
     kLabel.Size = UDim2.new(0.6, -14, 0, 28)
-    local klts = Instance.new("UITextSizeConstraint", kLabel); klts.MaxTextSize = 22
+    Instance.new("UITextSizeConstraint", kLabel).MaxTextSize = 22
 
     local kBtn = Instance.new("TextButton", row1)
     kBtn.Text = ""
@@ -249,9 +268,9 @@ local function buildSettingsPanel()
     kBtnTitle.TextScaled = true
     kBtnTitle.Size = UDim2.new(1, -16, 1, -8)
     kBtnTitle.Position = UDim2.new(0, 8, 0, 4)
-    local kbts = Instance.new("UITextSizeConstraint", kBtnTitle); kbts.MaxTextSize = 22
+    Instance.new("UITextSizeConstraint", kBtnTitle).MaxTextSize = 22
 
-    -- Row 2: Show Floating Button (mesmo tamanho do row1)
+    -- Row 2
     local row2 = Instance.new("Frame", modal)
     row2.BackgroundColor3 = theme.card
     row2.Size = UDim2.new(1, -60, 0, 76)
@@ -267,7 +286,7 @@ local function buildSettingsPanel()
     showLbl.TextXAlignment = Enum.TextXAlignment.Left
     showLbl.Position = UDim2.new(0, 14, 0.5, -14)
     showLbl.Size = UDim2.new(0.6, -14, 0, 28)
-    local slts = Instance.new("UITextSizeConstraint", showLbl); slts.MaxTextSize = 22
+    Instance.new("UITextSizeConstraint", showLbl).MaxTextSize = 22
 
     local tog = Instance.new("TextButton", row2)
     tog.Text = ""
@@ -314,13 +333,13 @@ local function buildSettingsPanel()
     credits.BackgroundTransparency = 1
     credits.Text = "Credits: SyniX Hub"
     credits.Font = Enum.Font.GothamMedium
-    credits.TextColor3 = theme.text_muted
+    credits.TextColor3 = DEFAULT_THEME.text_muted
     credits.TextScaled = true
     credits.Position = UDim2.new(0, 0, 0, contentY + 96 + 94)
     credits.Size = UDim2.new(1, 0, 0, 26)
-    local crts = Instance.new("UITextSizeConstraint", credits); crts.MaxTextSize = 18
+    Instance.new("UITextSizeConstraint", credits).MaxTextSize = 18
 
-    -- Footer centralizado
+    -- Footer
     local footer = Instance.new("Frame", modal)
     footer.BackgroundTransparency = 1
     footer.Size = UDim2.new(1, -60, 0, 66)
@@ -336,26 +355,23 @@ local function buildSettingsPanel()
         local b = Instance.new("TextButton")
         b.Text = ""
         b.AutoButtonColor = true
-        b.BackgroundColor3 = theme.card
+        b.BackgroundColor3 = DEFAULT_THEME.card
         b.Size = UDim2.fromOffset(280, 56)
         Instance.new("UICorner", b).CornerRadius = UDim.new(0,14)
-
         local lbl = Instance.new("TextLabel", b)
         lbl.BackgroundTransparency = 1
         lbl.Text = txt
         lbl.Font = Enum.Font.GothamBlack
-        lbl.TextColor3 = theme.text
+        lbl.TextColor3 = DEFAULT_THEME.text
         lbl.TextScaled = true
         lbl.Size = UDim2.new(1, -16, 1, -10)
         lbl.Position = UDim2.new(0, 8, 0, 5)
-        local ts = Instance.new("UITextSizeConstraint", lbl); ts.MaxTextSize = 22
+        Instance.new("UITextSizeConstraint", lbl).MaxTextSize = 22
         return b
     end
 
-    local btnCopy = mkBtn("Copy Discord")
-    btnCopy.Parent = footer
-    local btnClose = mkBtn("Close")
-    btnClose.Parent = footer
+    local btnCopy = mkBtn("Copy Discord"); btnCopy.Parent = footer
+    local btnClose = mkBtn("Close");        btnClose.Parent = footer
 
     btnCopy.MouseButton1Click:Connect(function()
         if setclipboard then setclipboard("https://discord.gg/SEU-LINK") end
@@ -378,16 +394,14 @@ local function buildSettingsPanel()
     Lib._settingsModal = modal
 end
 
--- ===== Construção da janela principal =====
+-- ===== Janela principal =====
 function Lib:_spawnWindow(opts)
     opts = opts or {}
     if Lib._singleMode then opts.multi = false end
-
     local player = Players.LocalPlayer
     local theme = merge(DEFAULT_THEME, (opts and opts.theme) or {})
     if opts and opts.size then theme.winSize = opts.size end
 
-    -- reusa janela no modo single
     if not (opts and opts.multi) then
         if Lib._currentGui and Lib._currentGui.Parent then
             Lib._currentGui.Enabled = true
@@ -401,7 +415,6 @@ function Lib:_spawnWindow(opts)
     gui.DisplayOrder = 900
     gui.Parent = player:WaitForChild("PlayerGui")
 
-    -- Keybind global para minimizar/restaurar
     UIS.InputBegan:Connect(function(input, gp)
         if gp then return end
         if Lib._minKey and input.KeyCode == Lib._minKey then
@@ -414,11 +427,11 @@ function Lib:_spawnWindow(opts)
 
     local win = Instance.new("Frame")
     win.Name = "Window"
-    win.Size = theme.winSize
     win.BackgroundColor3 = theme.bg_window
     Instance.new("UICorner", win).CornerRadius = UDim.new(0,14)
     local wS = Instance.new("UIStroke", win); wS.Color=theme.stroke; wS.Transparency=0.15
     win.Parent = gui
+    fitWindowToScreen(gui, win, theme)
     enableDrag(win, true)
 
     -- Header
@@ -460,11 +473,10 @@ function Lib:_spawnWindow(opts)
         return b
     end
 
-    -- Engrenagem (config) branca
     local btnCfg = Instance.new("ImageButton", header)
     btnCfg.BackgroundTransparency = 1
     btnCfg.Image = "rbxassetid://18702777518"
-    btnCfg.ImageColor3 = Color3.fromRGB(255,255,255) -- branco
+    btnCfg.ImageColor3 = Color3.fromRGB(255,255,255)
     btnCfg.Size = UDim2.fromOffset(28,28)
     btnCfg.Position = UDim2.new(1,-116,0.5,-14)
     btnCfg.ZIndex = 5
@@ -478,7 +490,6 @@ function Lib:_spawnWindow(opts)
     body.Position = UDim2.new(0, 6, 0, 60)
     body.Size = UDim2.new(1, -12, 1, -68)
 
-    -- Sidebar
     local sidebar = Instance.new("ScrollingFrame", body)
     sidebar.Name = "Sidebar"
     sidebar.BackgroundColor3 = theme.bg_sidebar
@@ -496,7 +507,6 @@ function Lib:_spawnWindow(opts)
         sidebar.CanvasSize = UDim2.new(0,0,0, sList.AbsoluteContentSize.Y + 6)
     end)
 
-    -- Content
     local content = Instance.new("Frame", body)
     content.BackgroundColor3 = theme.bg_panel
     content.Size = UDim2.new(1, -(theme.sidebarWidth+6), 1, 0)
@@ -515,7 +525,6 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- ==== LATERAL ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, 0, 0, 38)
@@ -553,7 +562,7 @@ function Lib:_spawnWindow(opts)
         Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
     end
 
-    -- ===== Abas / Widgets =====
+    -- Tabs/Widgets (iguais à versão anterior) ------------------------------
     local function MakeTab(def)
         local sideBtn = makeSideItem(def.icon, def.name or "Tab")
         sideBtn.Parent = sidebar
@@ -646,10 +655,8 @@ function Lib:_spawnWindow(opts)
                 if callback then task.spawn(function() pcall(callback, value) end) end
             end)
 
-            return {
-                Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
-                Get=function() return value end
-            }
+            return { Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
+                     Get=function() return value end }
         end
 
         local function TAddButton(iconId, text, callback)
@@ -690,7 +697,6 @@ function Lib:_spawnWindow(opts)
             return { Instance = row, SetText=function(t) lbl.Text=t end, SetIcon=function(id) ico.Image=id end }
         end
 
-        -- Dropdown com cabeçalho fixo (vários por página OK)
         local function TAddDropdown(iconId, labelText, items, default, callback)
             items = items or {}
             local capH = theme.rowHeight
@@ -866,7 +872,6 @@ function Lib:_spawnWindow(opts)
         function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text or opt.Name, opt.items, opt.default, opt.callback or opt.Callback) end
 
         sideBtn.MouseButton1Click:Connect(openThis)
-
         if not sidebar:FindFirstChild("_firstTabSelected") then
             local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
             openThis()
@@ -874,36 +879,20 @@ function Lib:_spawnWindow(opts)
 
         return setmetatable(tab, {__index = tab})
     end
+    -------------------------------------------------------------------------
 
-    -- posição inicial
-    if opts and opts.multi then
-        local baseX, baseY, dx, dy = 120, 80, 24, 32
-        local k = (#Lib._openWindows) % 8
-        local px, py = baseX + dx*k, baseY + dy*k
-        local screen = win.Parent and win.Parent.AbsoluteSize or Vector2.new(1280,720)
-        px = math.clamp(px, 0, math.max(0, screen.X - win.AbsoluteSize.X))
-        py = math.clamp(py, 0, math.max(0, screen.Y - win.AbsoluteSize.Y))
-        win.Position = UDim2.fromOffset(px, py)
-    else
-        win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
-    end
+    -- posição/size inicial responsivos
+    fitWindowToScreen(gui, win, theme)
 
     -- header buttons
-    btnCfg.MouseButton1Click:Connect(function()
-        buildSettingsPanel()
-    end)
+    btnCfg.MouseButton1Click:Connect(function() buildSettingsPanel() end)
 
     btnMin.MouseButton1Click:Connect(function()
-        -- animação de minimizar + esconde modal
         Tween:Create(win, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
         Tween:Create(header, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
         gui.Enabled = false
         if Lib._settingsModal then Lib._settingsModal.Visible = false end
-        -- restaura transparência quando voltar
-        task.delay(0.2, function()
-            win.BackgroundTransparency = 0
-            header.BackgroundTransparency = 0
-        end)
+        task.delay(0.2, function() win.BackgroundTransparency = 0; header.BackgroundTransparency = 0 end)
     end)
 
     btnCls.MouseButton1Click:Connect(function()
@@ -916,6 +905,14 @@ function Lib:_spawnWindow(opts)
         destroyLauncher()
         gui:Destroy()
         Lib._settingsModal = nil
+    end)
+
+    -- Reajustar quando a tela mudar
+    gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        fitWindowToScreen(gui, win, theme)
+        if Lib._settingsModal and Lib._settingsModal.Visible then
+            fitModal(Lib._settingsModal, gui)
+        end
     end)
 
     -- win obj
@@ -939,7 +936,6 @@ function Lib:_spawnWindow(opts)
         Lib._lastOpts = opts
     end
 
-    -- listeners para restaurar modal junto da janela
     gui:GetPropertyChangedSignal("Enabled"):Connect(function()
         if Lib._settingsModal then Lib._settingsModal.Visible = gui.Enabled end
     end)
