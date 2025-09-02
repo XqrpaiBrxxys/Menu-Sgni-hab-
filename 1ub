@@ -483,186 +483,253 @@ function Lib:_spawnWindow(opts)
         end
 
         -- ===== Dropdown =====
-        local function TAddDropdown(iconId, labelText, items, default, callback)
-            items = items or {}
-            local capH = DEFAULT_THEME.rowHeight
-            local maxVisible = 8
+local function TAddDropdown(iconId, labelText, items, default, callback)
+    items = items or {}
+    local capH = DEFAULT_THEME.rowHeight
+    local maxVisible = 8
 
-            -- container
-            local row = Instance.new("Frame", page)
-            row.Size = UDim2.new(1, 0, 0, capH)  -- fechado
-            row.BackgroundColor3 = DEFAULT_THEME.row
-            row.ClipsDescendants = true
-            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+    -- container
+    local row = Instance.new("Frame", page)
+    row.Size = UDim2.new(1, 0, 0, capH)  -- fechado
+    row.BackgroundColor3 = DEFAULT_THEME.row
+    row.ClipsDescendants = true
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
-            -- CAP
-            local cap = Instance.new("Frame", row)
-            cap.BackgroundTransparency = 1
-            cap.Size = UDim2.new(1, 0, 0, capH)
-            cap.ZIndex = 2
+    -- CAP
+    local cap = Instance.new("Frame", row)
+    cap.BackgroundTransparency = 1
+    cap.Size = UDim2.new(1, 0, 0, capH)
+    cap.ZIndex = 2
 
-            local ico = Instance.new("ImageLabel", cap)
-            ico.BackgroundTransparency = 1
-            ico.Image = iconId or "rbxassetid://14862323455"
-            ico.Size = UDim2.fromOffset(18,18)
-            ico.Position = UDim2.new(0, 12, 0.5, -9)
-            ico.ImageColor3 = Color3.fromRGB(235,235,240)
-            ico.ZIndex = 2
+    local ico = Instance.new("ImageLabel", cap)
+    ico.BackgroundTransparency = 1
+    ico.Image = iconId or "rbxassetid://14862323455"
+    ico.Size = UDim2.fromOffset(18,18)
+    ico.Position = UDim2.new(0, 12, 0.5, -9)
+    ico.ImageColor3 = Color3.fromRGB(235,235,240)
+    ico.ZIndex = 2
 
-            local label = Instance.new("TextLabel", cap)
-            label.BackgroundTransparency = 1
-            label.Text = string.upper(labelText or "DROPDOWN")
-            label.Font = Enum.Font.GothamSemibold
-            label.TextColor3 = DEFAULT_THEME.text
-            label.TextXAlignment = Enum.TextXAlignment.Left
-            label.TextScaled = true
-            label.Position = UDim2.new(0, 36, 0, 2)
-            label.Size = UDim2.new(1, -180, 1, -4)
-            Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
-            label.ZIndex = 2
+    local label = Instance.new("TextLabel", cap)
+    label.BackgroundTransparency = 1
+    label.Text = string.upper(labelText or "DROPDOWN")
+    label.Font = Enum.Font.GothamSemibold
+    label.TextColor3 = DEFAULT_THEME.text
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextScaled = true
+    label.Position = UDim2.new(0, 36, 0, 2)
+    label.Size = UDim2.new(1, -180, 1, -4)
+    Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
+    label.ZIndex = 2
 
-            local valueText = Instance.new("TextLabel", cap)
-            valueText.BackgroundTransparency = 1
-            valueText.Text = tostring(default or (items[1] or ""))
-            valueText.Font = Enum.Font.Gotham
-            valueText.TextColor3 = DEFAULT_THEME.text
-            valueText.TextXAlignment = Enum.TextXAlignment.Right
-            valueText.TextScaled = true
-            valueText.Position = UDim2.new(0, 0, 0, 6)
-            valueText.Size = UDim2.new(1, -56, 1, -12)
-            Instance.new("UITextSizeConstraint", valueText).MaxTextSize = 14
-            valueText.ZIndex = 2
+    local valueText = Instance.new("TextLabel", cap)
+    valueText.BackgroundTransparency = 1
+    valueText.Text = tostring(default or (items[1] or ""))
+    valueText.Font = Enum.Font.Gotham
+    valueText.TextColor3 = DEFAULT_THEME.text
+    valueText.TextXAlignment = Enum.TextXAlignment.Right
+    valueText.TextScaled = true
+    valueText.Position = UDim2.new(0, 0, 0, 6)
+    valueText.Size = UDim2.new(1, -56, 1, -12)
+    Instance.new("UITextSizeConstraint", valueText).MaxTextSize = 14
+    valueText.ZIndex = 2
 
-            local chevron = Instance.new("TextLabel", cap)
-            chevron.BackgroundTransparency = 1
-            chevron.Text = "▼"
-            chevron.Font = Enum.Font.GothamBold
-            chevron.TextColor3 = DEFAULT_THEME.text
-            chevron.TextScaled = true
-            chevron.Position = UDim2.new(1, -40, 0, 8)
-            chevron.Size = UDim2.fromOffset(28, 28)
-            Instance.new("UITextSizeConstraint", chevron).MaxTextSize = 16
-            chevron.ZIndex = 2
+    local chevron = Instance.new("TextLabel", cap)
+    chevron.BackgroundTransparency = 1
+    chevron.Text = "▼"
+    chevron.Font = Enum.Font.GothamBold
+    chevron.TextColor3 = DEFAULT_THEME.text
+    chevron.TextScaled = true
+    chevron.Position = UDim2.new(1, -40, 0, 8)
+    chevron.Size = UDim2.fromOffset(28, 28)
+    Instance.new("UITextSizeConstraint", chevron).MaxTextSize = 16
+    chevron.ZIndex = 2
 
-            -- LISTA
-            local opts = Instance.new("ScrollingFrame", row)
-            opts.BackgroundTransparency = 1
-            opts.Position = UDim2.new(0, 8, 0, capH)
-            opts.Size = UDim2.new(1, -16, 0, 0)
-            opts.ScrollBarThickness = 6
-            opts.ClipsDescendants = true
-            opts.ZIndex = 1
-            opts.CanvasSize = UDim2.new(0,0,0,0)
+    -- LISTA
+    local opts = Instance.new("ScrollingFrame", row)
+    opts.BackgroundTransparency = 1
+    opts.Position = UDim2.new(0, 8, 0, capH)
+    opts.Size = UDim2.new(1, -16, 0, 0)
+    opts.ScrollBarThickness = 6
+    opts.ClipsDescendants = true
+    opts.ZIndex = 1
+    opts.CanvasSize = UDim2.new(0,0,0,0)
 
-            local optsList = Instance.new("UIListLayout", opts)
-            optsList.Padding = UDim.new(0, 6)
-            optsList.SortOrder = Enum.SortOrder.LayoutOrder
-            optsList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
+    local optsList = Instance.new("UIListLayout", opts)
+    optsList.Padding = UDim.new(0, 6)
+    optsList.SortOrder = Enum.SortOrder.LayoutOrder
+    optsList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
+    end)
+
+    local function makeOption(txt)
+        local b = Instance.new("TextButton")
+        b.Text = ""
+        b.AutoButtonColor = true
+        b.Size = UDim2.new(1, 0, 0, 32)
+        b.BackgroundColor3 = DEFAULT_THEME.card
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+        local l = Instance.new("TextLabel", b)
+        l.BackgroundTransparency = 1
+        l.Text = tostring(txt)
+        l.Font = Enum.Font.Gotham
+        l.TextColor3 = DEFAULT_THEME.text
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.TextScaled = true
+        l.Position = UDim2.new(0, 10, 0, 2)
+        l.Size = UDim2.new(1, -20, 1, -4)
+        Instance.new("UITextSizeConstraint", l).MaxTextSize = 14
+        return b
+    end
+
+    local function heightForList()
+        local count = #items
+        if count == 0 then return 0 end
+        local fullH = (count * 32) + ((count-1) * 6) + 8
+        local maxH  = (maxVisible * 32) + ((maxVisible-1) * 6) + 8
+        return math.min(fullH, maxH)
+    end
+
+    local open = false
+    local function toggle(want)
+        local wantOpen = (want==nil) and (not open) or want
+        -- se não há itens, não abre
+        if wantOpen and #items == 0 then return end
+        open = wantOpen
+        chevron.Text = open and "▲" or "▼"
+        local listH = open and heightForList() or 0
+        Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
+        Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = UDim2.new(1, -16, 0, listH)}):Play()
+    end
+
+    local function clearOptions()
+        for _,c in ipairs(opts:GetChildren()) do
+            if c:IsA("GuiObject") then c:Destroy() end
+        end
+    end
+
+    local _suppress = false  -- evita callback em mudanças programáticas
+    local onChange = callback
+
+    local function fireChange(v)
+        if onChange and not _suppress then
+            task.spawn(function() pcall(onChange, v) end)
+        end
+    end
+
+    local function populate(list)
+        clearOptions()
+        for _,name in ipairs(list) do
+            local b = makeOption(name)
+            b.Parent = opts
+            b.MouseButton1Click:Connect(function()
+                _suppress = false
+                valueText.Text = tostring(name)
+                toggle(false)
+                fireChange(name)
             end)
+        end
+        task.defer(function()
+            opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
+        end)
+    end
+    populate(items)
 
-            local function makeOption(txt)
-                local b = Instance.new("TextButton")
-                b.Text = ""
-                b.AutoButtonColor = true
-                b.Size = UDim2.new(1, 0, 0, 32)
-                b.BackgroundColor3 = DEFAULT_THEME.card
-                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
-                local l = Instance.new("TextLabel", b)
-                l.BackgroundTransparency = 1
-                l.Text = tostring(txt)
-                l.Font = Enum.Font.Gotham
-                l.TextColor3 = DEFAULT_THEME.text
-                l.TextXAlignment = Enum.TextXAlignment.Left
-                l.TextScaled = true
-                l.Position = UDim2.new(0, 10, 0, 2)
-                l.Size = UDim2.new(1, -20, 1, -4)
-                Instance.new("UITextSizeConstraint", l).MaxTextSize = 14
-                return b
+    local current = default or items[1]
+    valueText.Text = tostring(current or "—")
+
+    local function setInternal(v, programmatic)
+        current = v
+        valueText.Text = tostring(v or "—")
+        if not programmatic then
+            fireChange(v)
+        end
+    end
+
+    local function bindToggleClick(guiObj)
+        guiObj.InputBegan:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+                toggle()
             end
+        end)
+    end
+    bindToggleClick(cap)
+    bindToggleClick(label)
+    bindToggleClick(valueText)
+    bindToggleClick(chevron)
+    bindToggleClick(ico)
 
-            local function heightForList()
-                local count = #items
-                if count == 0 then return 0 end
-                local fullH = (count * 32) + ((count-1) * 6) + 8
-                local maxH  = (maxVisible * 32) + ((maxVisible-1) * 6) + 8
-                return math.min(fullH, maxH)
+    -- ===== API pública =====
+    local api = {}
+
+    function api:Set(v)
+        _suppress = true
+        setInternal(v, true)   -- programático
+        _suppress = false
+    end
+
+    function api:Get()
+        return current
+    end
+
+    function api:GetItems()
+        return table.clone(items)
+    end
+
+    function api:SetIndex(i)
+        if typeof(i)=="number" and i>=1 and i<=#items then
+            api:Set(items[i])
+        end
+    end
+
+    function api:OnChange(fn)
+        onChange = fn
+    end
+
+    function api:SetItems(newItems, newDefault)
+        items = newItems or {}
+        populate(items)
+
+        -- decide o novo "current"
+        local nextValue = newDefault
+
+        -- preserva seleção atual se existir na nova lista
+        if nextValue == nil and current ~= nil then
+            local found = false
+            for _,v in ipairs(items) do
+                if v == current then found = true break end
             end
-
-            local open = false
-            local function toggle(want)
-                local wantOpen = (want==nil) and (not open) or want
-                open = wantOpen
-                chevron.Text = open and "▲" or "▼"
-                local listH = open and heightForList() or 0
-                Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
-                Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, -16, 0, listH)}):Play()
-            end
-
-            local function populate(list)
-                for _,c in ipairs(opts:GetChildren()) do
-                    if c:IsA("GuiObject") then c:Destroy() end
-                end
-                for _,name in ipairs(list) do
-                    local b = makeOption(name)
-                    b.Parent = opts
-                    b.MouseButton1Click:Connect(function()
-                        valueText.Text = tostring(name)
-                        toggle(false)
-                        if callback then task.spawn(function() pcall(callback, name) end) end
-                    end)
-                end
-                task.defer(function()
-                    opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
-                end)
-            end
-            populate(items)
-
-            local function bindToggleClick(guiObj)
-                guiObj.InputBegan:Connect(function(i)
-                    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-                        toggle()
-                    end
-                end)
-            end
-            bindToggleClick(cap)
-            bindToggleClick(label)
-            bindToggleClick(valueText)
-            bindToggleClick(chevron)
-            bindToggleClick(ico)
-
-            local current = default or items[1]
-            if current then valueText.Text = tostring(current) end
-
-            return {
-                Set=function(v)
-                    current=v
-                    valueText.Text=tostring(v)
-                    if callback then pcall(callback,v) end
-                end,
-                Get=function() return current end,
-                SetItems=function(newItems, newDefault)
-                    items = newItems or {}
-                    populate(items)
-                    current = newDefault or items[1]
-                    valueText.Text = tostring(current or "")
-                    toggle(false)
-                end,
-                Open=function() toggle(true) end,
-                Close=function() toggle(false) end
-            }
+            if found then nextValue = current end
         end
 
-        local function openThis()
-            for _,c in ipairs(content:GetChildren()) do
-                if c:IsA("ScrollingFrame") then c.Visible = false end
-            end
-            page.Visible = true
-            selectSide(sideBtn)
-            pageTitle.Text = "| " .. (def.name or "Tab")
+        -- senão, cai pro primeiro item
+        if nextValue == nil then
+            nextValue = items[1]
         end
+
+        _suppress = true
+        setInternal(nextValue, true)   -- não chama callback externo
+        toggle(false)                  -- fecha lista ao atualizar
+        _suppress = false
+    end
+
+    -- Alias de compatibilidade
+    function api:Refresh(newItems, keepSelection)
+        local def
+        if keepSelection then
+            -- tenta manter o atual
+            def = current
+        end
+        api:SetItems(newItems, def)
+    end
+
+    function api:Open()  toggle(true)  end
+    function api:Close() toggle(false) end
+
+    return api
+end
+
 
         local tab = {}
         function tab:AddSection(text)  return TAddSection(text) end
