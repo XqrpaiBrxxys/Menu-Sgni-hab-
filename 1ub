@@ -216,9 +216,8 @@ local function buildSettingsPanel(theme, launcherGetterSetter)
     kLabel.Font = Enum.Font.Gotham
     kLabel.TextScaled = true
     kLabel.TextColor3 = theme.text
-    kLabel.Position = UDim2.new(0, 14, 0, 16)  -- padding corrigido (mais baixo)
-    kLabel.Size = UDim2.new(1, -170, 0, 28)
-    Instance.new("UITextSizeConstraint", kLabel).MaxTextSize = 16
+   kLabel.Position = UDim2.new(0, 14, 0.5, -12)  -- 24px de altura => -12 centraliza
+kLabel.Size     = UDim2.new(1, -170, 0, 24)
 
     local keyBtn = Instance.new("TextButton", keyCard)
     keyBtn.Text = (Lib._minimizeKey and Lib._minimizeKey.Name) or "P"
