@@ -1,4 +1,4 @@
--- SyniXLib.lua v0.4.78
+-- SyniXLib.lua v0.4.7
 -- Mudanças desta versão:
 --  - Botão "Link do Discord" no Config: usa apenas setclipboard (sem prints)
 --  - Mensagem ao copiar: "Discord link copied!" (toast no próprio Config)
