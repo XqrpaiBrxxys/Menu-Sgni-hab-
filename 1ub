@@ -6,7 +6,7 @@
 --  - Toggle "Mostrar Launcher (bolinha)" persiste e respeita estado
 --  - Keybind configurável para minimizar/mostrar (hotkey global)
 
-print("[SyniXLib] loaded v0.4.5")
+print("[SyniXLib] loaded v0.4.55")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
