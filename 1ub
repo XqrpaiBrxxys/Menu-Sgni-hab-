@@ -1,12 +1,9 @@
--- SyniXLib.lua v0.4.5
--- Novidades:
---  - ⚙ Config pequeno sempre on-top
---  - "-" e Hotkey minimizam a janela principal E o menu de Config
---  - Copiar Discord com múltiplas tentativas + fallback (TextBox selecionado)
---  - Toggle "Mostrar Launcher (bolinha)" persiste e respeita estado
---  - Keybind configurável para minimizar/mostrar (hotkey global)
-
-print("[SyniXLib] loaded v0.4.55")
+-- SyniXLib.lua v0.4.6
+-- Correções:
+--  - Botão "Copiar Discord" com fallback visível (popup) e seleção automática
+--  - Config bloqueia cliques no menu de trás (escudo fullscreen)
+--  - Header do Config só com "-" (sem X)
+--  - Minimize (-) e Hotkey continuam controlando janela principal + Config
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -25,14 +22,13 @@ Lib._currentWinObj   = nil
 Lib._lastOpts        = nil
 Lib._openWindows     = {}
 
--- Launcher
 Lib._launcherEnabled = true
-Lib._showLauncher    = (_G.SyniX_Settings and _G.SyniX_Settings.showLauncher) ~= false -- default true
+Lib._showLauncher    = (_G.SyniX_Settings and _G.SyniX_Settings.showLauncher) ~= false
 
 -- Config
 Lib._settingsGui       = nil
 Lib._settingsOpen      = false
-Lib._settingsWasOpen   = false  -- reabre se estava aberto antes de minimizar
+Lib._settingsWasOpen   = false
 Lib._capturingKey      = false
 Lib._hotkeyConn        = nil
 
@@ -43,11 +39,7 @@ Lib._minKey = Enum.KeyCode[defaultKeyName] or Enum.KeyCode.M
 -- Discord invite
 Lib._discordLink = (_G.SyniX_Settings and _G.SyniX_Settings.discordLink)
                 or _G.SyniX_DiscordInvite
-                or "https://discord.gg/BvQ8F4ux7h"
-
--- ===== Comportamento =====
-Lib._singleMode      = true
-Lib._launcherSnap    = false
+                or "https://discord.gg/yourinvite"
 
 -- ===== Tema =====
 local DEFAULT_THEME = {
@@ -59,17 +51,14 @@ local DEFAULT_THEME = {
     row         = Color3.fromRGB(28,30,40),
     stroke      = Color3.fromRGB(255,255,255),
     text        = Color3.fromRGB(238,240,248),
-    text_muted  = Color3.fromRGB(200,205,220),
     toggle_on   = Color3.fromRGB(245,245,245),
     toggle_off  = Color3.fromRGB(60,62,70),
     knob_on     = Color3.fromRGB(22,24,32),
     knob_off    = Color3.fromRGB(235,238,245),
-
     sidebarWidth = 176,
     rowHeight    = 48,
     toggleSize   = Vector2.new(84,30),
     knobSize     = Vector2.new(26,26),
-
     sideIconSize = 28,
     winSize      = UDim2.fromOffset(680,400),
 }
@@ -125,7 +114,7 @@ local function enableLauncherDrag(btn)
             i.Changed:Connect(function()
                 if i.UserInputState==Enum.UserInputState.End then
                     dragging = false
-                    _G.SyniXLauncherPos = btn.Position -- salva posição
+                    _G.SyniXLauncherPos = btn.Position
                 end
             end)
         end
@@ -152,65 +141,29 @@ local function saveSettings()
     _G.SyniX_Settings.discordLink = Lib._discordLink
 end
 
--- Copiar para clipboard com várias opções + fallback
+-- Tentativas para copiar
 local function tryCopy(text)
-    if typeof(text) ~= "string" or #text == 0 then return false, "texto inválido" end
-    local tried = false
-    local ok = false
-    local function safecall(fn, ...)
-        local s, e = pcall(fn, ...)
-        return s, e
+    if typeof(text) ~= "string" or #text == 0 then return false end
+    if rawget(getfenv() or _G, "setclipboard") then if pcall(setclipboard, text) then return true end end
+    if rawget(getfenv() or _G, "toclipboard") then if pcall(toclipboard, text) then return true end end
+    if rawget(_G, "syn") and syn then
+        if syn.write_clipboard and pcall(syn.write_clipboard, text) then return true end
+        if syn.clipboard and syn.clipboard.set and pcall(syn.clipboard.set, text) then return true end
     end
-
-    -- 1) setclipboard
-    if rawget(getfenv() or _G, "setclipboard") then
-        tried = true
-        ok = pcall(setclipboard, text)
-        if ok then return true end
-    end
-    -- 2) toclipboard
-    if not ok and rawget(getfenv() or _G, "toclipboard") then
-        tried = true
-        ok = pcall(toclipboard, text)
-        if ok then return true end
-    end
-    -- 3) Synapse / ScriptWare-like
-    if not ok and rawget(_G, "syn") and syn then
-        if syn.write_clipboard then
-            tried = true
-            ok = pcall(syn.write_clipboard, text)
-            if ok then return true end
-        end
-        if not ok and syn.clipboard and syn.clipboard.set then
-            tried = true
-            local s = pcall(syn.clipboard.set, text)
-            if s then return true end
-        end
-    end
-    -- 4) Outras variantes comuns
-    if not ok and rawget(_G, "clipboard") and clipboard and clipboard.set then
-        tried = true
-        ok = pcall(clipboard.set, text)
-        if ok then return true end
-    end
-
-    return false, tried and "executor bloqueou" or "sem API de clipboard"
+    if rawget(_G, "clipboard") and clipboard and clipboard.set and pcall(clipboard.set, text) then return true end
+    return false
 end
 
 -- ===== Launcher =====
 local function ensureLauncher()
     if not Lib._launcherEnabled then return end
     if Lib._showLauncher == false then
-        if Lib._launcherBtn then
-            if Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
-            Lib._launcherBtn = nil
-        end
-        if Lib._launcherGui and Lib._launcherGui.Parent then
-            Lib._launcherGui:Destroy(); Lib._launcherGui=nil
-        end
+        if Lib._launcherBtn and Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
+        Lib._launcherBtn = nil
+        if Lib._launcherGui and Lib._launcherGui.Parent then Lib._launcherGui:Destroy() end
+        Lib._launcherGui = nil
         return
     end
-
     if Lib._launcherBtn and Lib._launcherBtn.Parent then return end
 
     local player = Players.LocalPlayer
@@ -252,21 +205,17 @@ local function ensureLauncher()
 end
 
 local function destroyLauncher()
-    if Lib._launcherBtn then
-        if Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
-        Lib._launcherBtn = nil
-    end
-    if Lib._launcherGui then
-        if Lib._launcherGui.Parent then Lib._launcherGui:Destroy() end
-        Lib._launcherGui = nil
-    end
+    if Lib._launcherBtn and Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
+    Lib._launcherBtn = nil
+    if Lib._launcherGui and Lib._launcherGui.Parent then Lib._launcherGui:Destroy() end
+    Lib._launcherGui = nil
 end
 
 local function refreshLauncherVisibility()
     if Lib._showLauncher == false then destroyLauncher() else ensureLauncher() end
 end
 
--- ===== Sincronizar visibilidade principal + config =====
+-- ===== Sincroniza visibilidade principal + config =====
 function Lib:_setMainVisible(on)
     if not (Lib._currentGui and Lib._currentGui.Parent) then return end
     if on then
@@ -285,26 +234,97 @@ function Lib:_setMainVisible(on)
     end
 end
 
--- ===== Hotkey global para minimizar/mostrar =====
+-- ===== Hotkey global =====
 local function bindGlobalHotkey()
     if Lib._hotkeyConn then return end
     Lib._hotkeyConn = UIS.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
-        if Lib._capturingKey then return end
-        if input.UserInputType == Enum.UserInputType.Keyboard then
-            if input.KeyCode == Lib._minKey then
-                if Lib._currentGui and Lib._currentGui.Parent then
-                    Lib:_setMainVisible(not Lib._currentGui.Enabled)
-                elseif Lib._lastOpts then
-                    Lib:_spawnWindow(Lib._lastOpts)
-                end
+        if gpe or Lib._capturingKey then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Lib._minKey then
+            if Lib._currentGui and Lib._currentGui.Parent then
+                Lib:_setMainVisible(not Lib._currentGui.Enabled)
+            elseif Lib._lastOpts then
+                Lib:_spawnWindow(Lib._lastOpts)
             end
         end
     end)
 end
 bindGlobalHotkey()
 
--- ===== Config (pequena, on-top) =====
+-- ===== Popup genérico para copiar (fallback visível) =====
+local function makeCopyPopup(parent, link)
+    local popup = Instance.new("Frame")
+    popup.Size = UDim2.fromOffset(300,140)
+    popup.BackgroundColor3 = Color3.fromRGB(24,25,34)
+    popup.ZIndex = 20
+    Instance.new("UICorner", popup).CornerRadius = UDim.new(0,10)
+    local st = Instance.new("UIStroke", popup); st.Transparency = 0.4
+
+    local title = Instance.new("TextLabel", popup)
+    title.BackgroundTransparency = 1
+    title.Text = "Copiar Discord"
+    title.Font = Enum.Font.GothamBold
+    title.TextScaled = true
+    title.TextColor3 = Color3.fromRGB(238,240,248)
+    title.ZIndex = 21
+    title.Position = UDim2.new(0,12,0,8)
+    title.Size = UDim2.new(1,-24,0,22)
+    Instance.new("UITextSizeConstraint", title).MaxTextSize = 18
+
+    local box = Instance.new("TextBox", popup)
+    box.ClearTextOnFocus = false
+    box.TextEditable = true
+    box.Text = link
+    box.ZIndex = 21
+    box.Font = Enum.Font.Gotham
+    box.TextScaled = true
+    box.TextColor3 = Color3.fromRGB(238,240,248)
+    box.BackgroundColor3 = Color3.fromRGB(30,32,44)
+    box.Position = UDim2.new(0,12,0,40)
+    box.Size = UDim2.new(1,-24,0,36)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+    Instance.new("UITextSizeConstraint", box).MaxTextSize = 14
+
+    local tips = Instance.new("TextLabel", popup)
+    tips.BackgroundTransparency = 1
+    tips.Text = "Selecione e aperte Ctrl+C"
+    tips.Font = Enum.Font.Gotham
+    tips.TextScaled = true
+    tips.TextColor3 = Color3.fromRGB(200,205,220)
+    tips.ZIndex = 21
+    tips.Position = UDim2.new(0,12,0,80)
+    tips.Size = UDim2.new(1,-24,0,18)
+    Instance.new("UITextSizeConstraint", tips).MaxTextSize = 12
+
+    local okBtn = Instance.new("TextButton", popup)
+    okBtn.Text = "Fechar"
+    okBtn.ZIndex = 21
+    okBtn.Font = Enum.Font.GothamBold
+    okBtn.TextScaled = true
+    okBtn.TextColor3 = Color3.fromRGB(20,21,28)
+    okBtn.BackgroundColor3 = Color3.fromRGB(235,238,245)
+    okBtn.Position = UDim2.new(1,-92,1,-40)
+    okBtn.Size = UDim2.fromOffset(80,30)
+    Instance.new("UICorner", okBtn).CornerRadius = UDim.new(0,8)
+    Instance.new("UITextSizeConstraint", okBtn).MaxTextSize = 14
+
+    okBtn.MouseButton1Click:Connect(function() popup:Destroy() end)
+
+    -- centraliza no parent
+    popup.Position = UDim2.new(0.5,-150,0.5,-70)
+    popup.Parent = parent
+
+    -- foco + seleção automática
+    task.defer(function()
+        box:CaptureFocus()
+        box.SelectionStart = 1
+        box.CursorPosition = #box.Text + 1
+        box.SelectionLength = #box.Text
+    end)
+
+    return popup
+end
+
+-- ===== Config (com escudo que bloqueia interações atrás) =====
 function Lib:SetDiscord(link)
     if type(link)=="string" and #link>0 then
         Lib._discordLink = link
@@ -319,22 +339,35 @@ local function buildSettingsUI(anchorWin)
     local gui = Instance.new("ScreenGui")
     gui.Name = "SyniX_Settings"
     gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
-    gui.DisplayOrder = 1200 -- sempre na frente
+    gui.DisplayOrder = 1200 -- na frente do menu
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.Parent = player:WaitForChild("PlayerGui")
 
+    -- ESCUDO fullscreen (bloqueia clique no que está atrás)
+    local shield = Instance.new("Frame", gui)
+    shield.Name = "Shield"
+    shield.BackgroundTransparency = 1
+    shield.Active = true -- captura inputs
+    shield.ZIndex = 5
+    shield.Size = UDim2.fromScale(1,1)
+    -- Não precisa evento: só o Active=true já impede passar.
+
+    -- Painel Config
     local panel = Instance.new("Frame")
     panel.Name = "Panel"
     panel.Size = UDim2.fromOffset(320, 210)
     panel.BackgroundColor3 = Color3.fromRGB(20,21,28)
+    panel.ZIndex = 10
     panel.Parent = gui
     Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
     local st = Instance.new("UIStroke", panel); st.Color = Color3.fromRGB(255,255,255); st.Transparency = 0.2
 
-    -- Header
+    -- Header (só "-")
     local head = Instance.new("Frame", panel)
     head.Size = UDim2.new(1, -12, 0, 38)
     head.Position = UDim2.new(0, 6, 0, 6)
     head.BackgroundColor3 = Color3.fromRGB(24,25,34)
+    head.ZIndex = 11
     Instance.new("UICorner", head).CornerRadius = UDim.new(0,8)
     local hs = Instance.new("UIStroke", head); hs.Transparency = 0.7
 
@@ -345,8 +378,9 @@ local function buildSettingsUI(anchorWin)
     title.TextColor3 = Color3.fromRGB(238,240,248)
     title.TextScaled = true
     title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 12
     title.Position = UDim2.new(0, 10, 0, 4)
-    title.Size = UDim2.new(1, -90, 1, -8)
+    title.Size = UDim2.new(1, -60, 1, -8)
     Instance.new("UITextSizeConstraint", title).MaxTextSize = 18
 
     local minCfg = Instance.new("TextButton", head)
@@ -355,25 +389,16 @@ local function buildSettingsUI(anchorWin)
     minCfg.TextScaled = true
     minCfg.TextColor3 = Color3.fromRGB(238,240,248)
     minCfg.Size = UDim2.fromOffset(30,24)
-    minCfg.Position = UDim2.new(1,-70,0.5,-12)
+    minCfg.Position = UDim2.new(1,-36,0.5,-12)
     minCfg.BackgroundColor3 = Color3.fromRGB(30,32,44)
+    minCfg.ZIndex = 12
     Instance.new("UICorner", minCfg).CornerRadius = UDim.new(0,6)
     Instance.new("UITextSizeConstraint", minCfg).MaxTextSize = 16
-
-    local closeCfg = Instance.new("TextButton", head)
-    closeCfg.Text = "X"
-    closeCfg.Font = Enum.Font.GothamBold
-    closeCfg.TextScaled = true
-    closeCfg.TextColor3 = Color3.fromRGB(238,240,248)
-    closeCfg.Size = UDim2.fromOffset(30,24)
-    closeCfg.Position = UDim2.new(1,-36,0.5,-12)
-    closeCfg.BackgroundColor3 = Color3.fromRGB(30,32,44)
-    Instance.new("UICorner", closeCfg).CornerRadius = UDim.new(0,6)
-    Instance.new("UITextSizeConstraint", closeCfg).MaxTextSize = 16
 
     -- Corpo
     local body = Instance.new("Frame", panel)
     body.BackgroundTransparency = 1
+    body.ZIndex = 11
     body.Position = UDim2.new(0, 10, 0, 52)
     body.Size = UDim2.new(1, -20, 1, -62)
 
@@ -385,6 +410,7 @@ local function buildSettingsUI(anchorWin)
     local rowKey = Instance.new("Frame", body)
     rowKey.Size = UDim2.new(1,0,0,38)
     rowKey.BackgroundColor3 = Color3.fromRGB(28,30,40)
+    rowKey.ZIndex = 11
     Instance.new("UICorner", rowKey).CornerRadius = UDim.new(0,8)
 
     local lbKey = Instance.new("TextLabel", rowKey)
@@ -394,6 +420,7 @@ local function buildSettingsUI(anchorWin)
     lbKey.TextScaled = true
     lbKey.TextXAlignment = Enum.TextXAlignment.Left
     lbKey.TextColor3 = Color3.fromRGB(238,240,248)
+    lbKey.ZIndex = 12
     lbKey.Position = UDim2.new(0, 10, 0, 4)
     lbKey.Size = UDim2.new(1, -130, 1, -8)
     Instance.new("UITextSizeConstraint", lbKey).MaxTextSize = 15
@@ -403,6 +430,7 @@ local function buildSettingsUI(anchorWin)
     keyBtn.Font = Enum.Font.GothamBold
     keyBtn.TextScaled = true
     keyBtn.TextColor3 = Color3.fromRGB(20,21,28)
+    keyBtn.ZIndex = 12
     keyBtn.Size = UDim2.fromOffset(96, 30)
     keyBtn.Position = UDim2.new(1, -106, 0.5, -15)
     keyBtn.BackgroundColor3 = Color3.fromRGB(235,238,245)
@@ -413,6 +441,7 @@ local function buildSettingsUI(anchorWin)
     local rowBall = Instance.new("Frame", body)
     rowBall.Size = UDim2.new(1,0,0,38)
     rowBall.BackgroundColor3 = Color3.fromRGB(28,30,40)
+    rowBall.ZIndex = 11
     Instance.new("UICorner", rowBall).CornerRadius = UDim.new(0,8)
 
     local lbBall = Instance.new("TextLabel", rowBall)
@@ -422,6 +451,7 @@ local function buildSettingsUI(anchorWin)
     lbBall.TextScaled = true
     lbBall.TextXAlignment = Enum.TextXAlignment.Left
     lbBall.TextColor3 = Color3.fromRGB(238,240,248)
+    lbBall.ZIndex = 12
     lbBall.Position = UDim2.new(0, 10, 0, 4)
     lbBall.Size = UDim2.new(1, -140, 1, -8)
     Instance.new("UITextSizeConstraint", lbBall).MaxTextSize = 15
@@ -432,12 +462,14 @@ local function buildSettingsUI(anchorWin)
     tBtn.Size = UDim2.fromOffset(66, 26)
     tBtn.Position = UDim2.new(1, -76, 0.5, -13)
     tBtn.BackgroundColor3 = Lib._showLauncher and Color3.fromRGB(245,245,245) or Color3.fromRGB(60,62,70)
+    tBtn.ZIndex = 12
     Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1,0)
 
     local knob = Instance.new("Frame", tBtn)
     knob.Size = UDim2.fromOffset(22,22)
     knob.Position = Lib._showLauncher and UDim2.new(0, 42, 0.5, -11) or UDim2.new(0, 2, 0.5, -11)
     knob.BackgroundColor3 = Lib._showLauncher and Color3.fromRGB(22,24,32) or Color3.fromRGB(235,238,245)
+    knob.ZIndex = 13
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
     local ks = Instance.new("UIStroke", knob); ks.Transparency = 0.7
 
@@ -450,17 +482,13 @@ local function buildSettingsUI(anchorWin)
     end
 
     -- Row: Copiar Discord
-    local rowDisc = Instance.new("Frame", body)
+    local rowDisc = Instance.new("TextButton", body)
+    rowDisc.Text = ""
+    rowDisc.AutoButtonColor = true
     rowDisc.Size = UDim2.new(1,0,0,38)
     rowDisc.BackgroundColor3 = Color3.fromRGB(24,25,34)
+    rowDisc.ZIndex = 11
     Instance.new("UICorner", rowDisc).CornerRadius = UDim.new(0,8)
-
-    local discBtn = Instance.new("TextButton", rowDisc)
-    discBtn.Text = ""
-    discBtn.AutoButtonColor = true
-    discBtn.BackgroundTransparency = 1
-    discBtn.Size = UDim2.new(1,0,1,0)
-    discBtn.Position = UDim2.new(0,0,0,0)
 
     local ic = Instance.new("ImageLabel", rowDisc)
     ic.BackgroundTransparency = 1
@@ -468,6 +496,7 @@ local function buildSettingsUI(anchorWin)
     ic.Size = UDim2.fromOffset(18,18)
     ic.Position = UDim2.new(0, 10, 0.5, -9)
     ic.ImageColor3 = Color3.fromRGB(235,235,240)
+    ic.ZIndex = 12
 
     local lbDisc = Instance.new("TextLabel", rowDisc)
     lbDisc.BackgroundTransparency = 1
@@ -478,15 +507,8 @@ local function buildSettingsUI(anchorWin)
     lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
     lbDisc.Position = UDim2.new(0, 36, 0, 0)
     lbDisc.Size = UDim2.new(1, -36, 1, 0)
+    lbDisc.ZIndex = 12
     Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
-
-    -- Fallback: TextBox oculto (aparece só quando precisa)
-    local copyBox = Instance.new("TextBox", panel)
-    copyBox.Visible = false
-    copyBox.Size = UDim2.fromOffset(1,1)
-    copyBox.Position = UDim2.fromOffset(-1000,-1000) -- fora da tela
-    copyBox.TextEditable = true
-    copyBox.Text = ""
 
     -- Toast
     local toast = Instance.new("TextLabel", panel)
@@ -495,6 +517,7 @@ local function buildSettingsUI(anchorWin)
     toast.Font = Enum.Font.GothamSemibold
     toast.TextColor3 = Color3.fromRGB(238,240,248)
     toast.TextScaled = true
+    toast.ZIndex = 20
     toast.Position = UDim2.new(0.5, -140, 1, -30)
     toast.Size = UDim2.fromOffset(280, 20)
     toast.Visible = false
@@ -517,16 +540,10 @@ local function buildSettingsUI(anchorWin)
         Lib._settingsOpen = false
     end)
 
-    closeCfg.MouseButton1Click:Connect(function()
-        gui.Enabled = false
-        Lib._settingsOpen = false
-        Lib._settingsWasOpen = false
-    end)
-
     tBtn.MouseButton1Click:Connect(function()
         Lib._showLauncher = not Lib._showLauncher
         paintToggle(Lib._showLauncher)
-        refreshLauncherVisibility()
+        if Lib._showLauncher then ensureLauncher() else destroyLauncher() end
         saveSettings()
     end)
 
@@ -547,27 +564,22 @@ local function buildSettingsUI(anchorWin)
         end)
     end)
 
-    discBtn.MouseButton1Click:Connect(function()
-        local ok = false
-        do
-            local success = false
-            local s, why = tryCopy(Lib._discordLink)
-            ok = s
-            if not ok then
-                -- fallback: seleciona TextBox e orienta usuário
-                copyBox.Text = Lib._discordLink
-                copyBox.Visible = true
-                copyBox:CaptureFocus()
-                copyBox.CursorPosition = #copyBox.Text + 1
-                copyBox.SelectionStart = 1
-                copyBox.SelectionLength = #copyBox.Text
-                showToast("Pressione Ctrl+C para copiar")
-                task.delay(2.0, function() copyBox.Visible = false end)
-            end
+    rowDisc.MouseButton1Click:Connect(function()
+        -- garante que o link atual é o desejado pelo usuário se ele setou via _G
+        if _G.SyniX_DiscordInvite and type(_G.SyniX_DiscordInvite)=="string" and #_G.SyniX_DiscordInvite>0 then
+            Lib._discordLink = _G.SyniX_DiscordInvite
+            saveSettings()
         end
-        if ok then showToast("Convite copiado!") end
+        local ok = tryCopy(Lib._discordLink)
+        if ok then
+            showToast("Convite copiado!")
+        else
+            -- Fallback VISÍVEL
+            makeCopyPopup(panel, Lib._discordLink)
+        end
     end)
 
+    -- posiciona ao lado da janela
     local function reposition()
         local screenSize = gui.AbsoluteSize
         local px, py = 100, 100
@@ -602,12 +614,9 @@ function Lib:_toggleSettings(anchorWin)
     Lib._settingsWasOpen = true
 end
 
--- ===== Construção da janela principal =====
+-- ===== Janela principal =====
 function Lib:_spawnWindow(opts)
     opts = opts or {}
-    if Lib._singleMode then opts.multi = false end
-
-    local player = Players.LocalPlayer
     local theme = merge(DEFAULT_THEME, (opts and opts.theme) or {})
     if opts and opts.size then theme.winSize = opts.size end
     if opts and opts.discord then Lib:SetDiscord(opts.discord) end
@@ -619,6 +628,7 @@ function Lib:_spawnWindow(opts)
         end
     end
 
+    local player = Players.LocalPlayer
     local gui = Instance.new("ScreenGui")
     gui.Name = "SyniX_Window"
     gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
@@ -655,7 +665,7 @@ function Lib:_spawnWindow(opts)
     hTitle.Font = Enum.Font.GothamBold
     hTitle.TextScaled = true
     hTitle.TextXAlignment = Enum.TextXAlignment.Left
-    hTitle.TextColor3 = theme.text
+    hTitle.TextColor3 = Color3.fromRGB(238,240,248)
     hTitle.Position = UDim2.new(0, 40, 0, 4)
     hTitle.Size = UDim2.new(1, -180, 1, -8)
     Instance.new("UITextSizeConstraint", hTitle).MaxTextSize = 20
@@ -666,7 +676,7 @@ function Lib:_spawnWindow(opts)
         b.Text = txt
         b.TextScaled = true
         b.Font = Enum.Font.GothamBold
-        b.TextColor3 = theme.text
+        b.TextColor3 = Color3.fromRGB(238,240,248)
         b.AutoButtonColor = true
         Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
         Instance.new("UITextSizeConstraint", b).MaxTextSize = 16
@@ -677,23 +687,19 @@ function Lib:_spawnWindow(opts)
     local btnMin = mkHeadBtn("-"); btnMin.Parent = header; btnMin.Size = UDim2.fromOffset(32,26); btnMin.Position = UDim2.new(1,-74,0.5,-13)
     local btnCfg = mkHeadBtn("⚙"); btnCfg.Parent = header; btnCfg.Size = UDim2.fromOffset(32,26); btnCfg.Position = UDim2.new(1,-110,0.5,-13)
 
-    -- Body
+    -- Body básico (Sidebar + Content) — mesma API de antes
     local body = Instance.new("Frame", win)
     body.BackgroundTransparency = 1
     body.Position = UDim2.new(0, 6, 0, 60)
     body.Size = UDim2.new(1, -12, 1, -68)
 
-    -- Sidebar
     local sidebar = Instance.new("ScrollingFrame", body)
     sidebar.Name = "Sidebar"
-    sidebar.BackgroundColor3 = theme.bg_sidebar
+    sidebar.BackgroundColor3 = Color3.fromRGB(16,17,24)
     sidebar.Size = UDim2.new(0, theme.sidebarWidth, 1, 0)
-    sidebar.Position = UDim2.new(0, 0, 0, 0)
     sidebar.ScrollBarThickness = 4
     sidebar.CanvasSize = UDim2.new(0,0,0,0)
     Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,10)
-    local sbS = Instance.new("UIStroke", sidebar); sbS.Transparency = 0.85; sbS.Color = theme.stroke
-
     local sList = Instance.new("UIListLayout", sidebar)
     sList.Padding = UDim.new(0,4)
     sList.SortOrder = Enum.SortOrder.LayoutOrder
@@ -701,30 +707,27 @@ function Lib:_spawnWindow(opts)
         sidebar.CanvasSize = UDim2.new(0,0,0, sList.AbsoluteContentSize.Y + 6)
     end)
 
-    -- Content
     local content = Instance.new("Frame", body)
-    content.BackgroundColor3 = theme.bg_panel
+    content.BackgroundColor3 = Color3.fromRGB(18,19,26)
     content.Size = UDim2.new(1, -(theme.sidebarWidth+6), 1, 0)
     content.Position = UDim2.new(0, theme.sidebarWidth+6, 0, 0)
     Instance.new("UICorner", content).CornerRadius = UDim.new(0,10)
-    local cS = Instance.new("UIStroke", content); cS.Transparency=0.85; cS.Color=theme.stroke
 
     local pageTitle = Instance.new("TextLabel", content)
     pageTitle.BackgroundTransparency = 1
     pageTitle.Text = "| Home"
     pageTitle.Font = Enum.Font.GothamBlack
-    pageTitle.TextColor3 = theme.text
+    pageTitle.TextColor3 = Color3.fromRGB(238,240,248)
     pageTitle.TextScaled = true
     pageTitle.TextXAlignment = Enum.TextXAlignment.Left
     pageTitle.Position = UDim2.new(0, 10, 0, 8)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- ==== LATERAL / Abas / Widgets (mesma API de antes) ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, 0, 0, 38)
-        btn.BackgroundColor3 = theme.card
+        btn.BackgroundColor3 = Color3.fromRGB(24,25,34)
         btn.AutoButtonColor = false
         btn.Text = ""
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
@@ -732,8 +735,8 @@ function Lib:_spawnWindow(opts)
         local ic = Instance.new("ImageLabel", btn)
         ic.BackgroundTransparency = 1
         ic.Image = iconId or "rbxassetid://14862323455"
-        ic.Size = UDim2.fromOffset(theme.sideIconSize, theme.sideIconSize)
-        ic.Position = UDim2.new(0, 8, 0.5, -math.floor(theme.sideIconSize/2))
+        ic.Size = UDim2.fromOffset(DEFAULT_THEME.sideIconSize, DEFAULT_THEME.sideIconSize)
+        ic.Position = UDim2.new(0, 8, 0.5, -DEFAULT_THEME.sideIconSize/2)
         ic.ImageColor3 = Color3.fromRGB(230,230,235)
 
         local lb = Instance.new("TextLabel", btn)
@@ -741,34 +744,27 @@ function Lib:_spawnWindow(opts)
         lb.Text = text
         lb.Font = Enum.Font.GothamSemibold
         lb.TextXAlignment = Enum.TextXAlignment.Left
-        lb.TextColor3 = theme.text
+        lb.TextColor3 = Color3.fromRGB(238,240,248)
         lb.TextScaled = true
-        lb.Position = UDim2.new(0, 8 + theme.sideIconSize + 8, 0, 4)
-        lb.Size = UDim2.new(1, -(8 + theme.sideIconSize + 8 + 8), 1, -8)
+        lb.Position = UDim2.new(0, 8 + DEFAULT_THEME.sideIconSize + 8, 0, 4)
+        lb.Size = UDim2.new(1, -(8 + DEFAULT_THEME.sideIconSize + 8 + 8), 1, -8)
         Instance.new("UITextSizeConstraint", lb).MaxTextSize = 16
         return btn
     end
-
     local function selectSide(sideBtn)
         for _,c in ipairs(sidebar:GetChildren()) do
-            if c:IsA("TextButton") then
-                Tween:Create(c, TweenInfo.new(0.15), {BackgroundColor3 = theme.card}):Play()
-            end
+            if c:IsA("TextButton") then Tween:Create(c, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(24,25,34)}):Play() end
         end
         Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
     end
-
     local function MakeTab(def)
-        local sideBtn = makeSideItem(def.icon, def.name or "Tab")
-        sideBtn.Parent = sidebar
-
-        local page = Instance.new("ScrollingFrame")
+        local sideBtn = makeSideItem(def.icon, def.name or "Tab"); sideBtn.Parent = sidebar
+        local page = Instance.new("ScrollingFrame", content)
         page.BackgroundTransparency = 1
         page.Position = UDim2.new(0, 8, 0, 44)
         page.Size = UDim2.new(1, -16, 1, -54)
         page.ScrollBarThickness = 6
         page.Visible = false
-        page.Parent = content
         local pageList = Instance.new("UIListLayout", page)
         pageList.Padding = UDim.new(0,8)
         pageList.SortOrder = Enum.SortOrder.LayoutOrder
@@ -782,17 +778,16 @@ function Lib:_spawnWindow(opts)
             s.Text = text
             s.Font = Enum.Font.GothamBold
             s.TextXAlignment = Enum.TextXAlignment.Left
-            s.TextColor3 = theme.text
+            s.TextColor3 = Color3.fromRGB(238,240,248)
             s.TextScaled = true
             s.Size = UDim2.new(1,0,0,24)
             Instance.new("UITextSizeConstraint", s).MaxTextSize = 16
             return s
         end
-
         local function TAddToggle(iconId, labelText, default, callback)
             local row = Instance.new("Frame", page)
-            row.Size = UDim2.new(1, 0, 0, theme.rowHeight)
-            row.BackgroundColor3 = theme.row
+            row.Size = UDim2.new(1, 0, 0, DEFAULT_THEME.rowHeight)
+            row.BackgroundColor3 = Color3.fromRGB(28,30,40)
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
             local ico = Instance.new("ImageLabel", row)
@@ -806,42 +801,39 @@ function Lib:_spawnWindow(opts)
             label.BackgroundTransparency = 1
             label.Text = string.upper(labelText or "TOGGLE")
             label.Font = Enum.Font.GothamSemibold
-            label.TextColor3 = theme.text
+            label.TextColor3 = Color3.fromRGB(238,240,248)
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextScaled = true
             label.Position = UDim2.new(0, 36, 0, 2)
-            label.Size = UDim2.new(1, - (theme.toggleSize.X + 70), 1, -4)
+            label.Size = UDim2.new(1, - (DEFAULT_THEME.toggleSize.X + 70), 1, -4)
             Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
 
             local btn = Instance.new("TextButton", row)
             btn.Text = ""
             btn.AutoButtonColor = false
-            btn.Size = UDim2.fromOffset(theme.toggleSize.X, theme.toggleSize.Y)
-            btn.Position = UDim2.new(1, -(theme.toggleSize.X + 12), 0.5, -math.floor(theme.toggleSize.Y/2))
-            btn.BackgroundColor3 = theme.toggle_off
+            btn.Size = UDim2.fromOffset(DEFAULT_THEME.toggleSize.X, DEFAULT_THEME.toggleSize.Y)
+            btn.Position = UDim2.new(1, -(DEFAULT_THEME.toggleSize.X + 12), 0.5, -math.floor(DEFAULT_THEME.toggleSize.Y/2))
+            btn.BackgroundColor3 = DEFAULT_THEME.toggle_off
             btn.ClipsDescendants = true
             Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
 
             local knob = Instance.new("Frame", btn)
-            knob.Size = UDim2.fromOffset(theme.knobSize.X, theme.knobSize.Y)
-            knob.Position = UDim2.new(0, 2, 0.5, -math.floor(theme.knobSize.Y/2))
-            knob.BackgroundColor3 = theme.knob_off
+            knob.Size = UDim2.fromOffset(DEFAULT_THEME.knobSize.X, DEFAULT_THEME.knobSize.Y)
+            knob.Position = UDim2.new(0, 2, 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2))
+            knob.BackgroundColor3 = DEFAULT_THEME.knob_off
             Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-            local kS = Instance.new("UIStroke", knob); kS.Transparency = 0.7; kS.Color = Color3.fromRGB(0,0,0)
+            local kS = Instance.new("UIStroke", knob); kS.Transparency = 0.7
 
-            local offX = 2
-            local onX  = math.max(2, theme.toggleSize.X - theme.knobSize.X - 2)
+            local offX, onX = 2, math.max(2, DEFAULT_THEME.toggleSize.X - DEFAULT_THEME.knobSize.X - 2)
 
             local value = default and true or false
             local function paint(v)
                 if v then
-                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = theme.toggle_on}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14),
-                        {Position = UDim2.new(0, onX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_on}):Play()
+                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = DEFAULT_THEME.toggle_on}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, onX, 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2)), BackgroundColor3 = Color3.fromRGB(22,24,32)}):Play()
                 else
-                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = theme.toggle_off}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14),
-                        {Position = UDim2.new(0, offX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_off}):Play()
+                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = DEFAULT_THEME.toggle_off}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, offX, 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2)), BackgroundColor3 = DEFAULT_THEME.knob_off}):Play()
                 end
             end
             paint(value)
@@ -855,12 +847,11 @@ function Lib:_spawnWindow(opts)
             return { Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
                      Get=function() return value end }
         end
-
         local function TAddButton(iconId, text, callback)
             local row = Instance.new("TextButton", page)
             row.Text = ""
             row.Size = UDim2.new(1, 0, 0, 44)
-            row.BackgroundColor3 = theme.card
+            row.BackgroundColor3 = Color3.fromRGB(24,25,34)
             row.AutoButtonColor = true
             Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
 
@@ -875,7 +866,7 @@ function Lib:_spawnWindow(opts)
             lbl.BackgroundTransparency = 1
             lbl.Text = text or "BUTTON"
             lbl.Font = Enum.Font.GothamBold
-            lbl.TextColor3 = theme.text
+            lbl.TextColor3 = Color3.fromRGB(238,240,248)
             lbl.TextXAlignment = Enum.TextXAlignment.Left
             lbl.TextScaled = true
             lbl.Position = UDim2.new(0, 36, 0, 0)
@@ -884,15 +875,14 @@ function Lib:_spawnWindow(opts)
 
             row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
         end
-
         local function TAddDropdown(iconId, labelText, items, default, callback)
             items = items or {}
-            local capH = theme.rowHeight
+            local capH = DEFAULT_THEME.rowHeight
             local maxVisible = 8
 
             local row = Instance.new("Frame", page)
             row.Size = UDim2.new(1, 0, 0, capH)
-            row.BackgroundColor3 = theme.row
+            row.BackgroundColor3 = Color3.fromRGB(28,30,40)
             row.ClipsDescendants = true
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
@@ -913,7 +903,7 @@ function Lib:_spawnWindow(opts)
             label.BackgroundTransparency = 1
             label.Text = string.upper(labelText or "DROPDOWN")
             label.Font = Enum.Font.GothamSemibold
-            label.TextColor3 = theme.text
+            label.TextColor3 = Color3.fromRGB(238,240,248)
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextScaled = true
             label.Position = UDim2.new(0, 36, 0, 2)
@@ -925,7 +915,7 @@ function Lib:_spawnWindow(opts)
             valueText.BackgroundTransparency = 1
             valueText.Text = tostring(default or (items[1] or ""))
             valueText.Font = Enum.Font.Gotham
-            valueText.TextColor3 = theme.text
+            valueText.TextColor3 = Color3.fromRGB(238,240,248)
             valueText.TextXAlignment = Enum.TextXAlignment.Right
             valueText.TextScaled = true
             valueText.Position = UDim2.new(0, 0, 0, 6)
@@ -937,7 +927,7 @@ function Lib:_spawnWindow(opts)
             chevron.BackgroundTransparency = 1
             chevron.Text = "▼"
             chevron.Font = Enum.Font.GothamBold
-            chevron.TextColor3 = theme.text
+            chevron.TextColor3 = Color3.fromRGB(238,240,248)
             chevron.TextScaled = true
             chevron.Position = UDim2.new(1, -40, 0, 8)
             chevron.Size = UDim2.fromOffset(28, 28)
@@ -965,13 +955,13 @@ function Lib:_spawnWindow(opts)
                 b.Text = ""
                 b.AutoButtonColor = true
                 b.Size = UDim2.new(1, 0, 0, 32)
-                b.BackgroundColor3 = theme.card
+                b.BackgroundColor3 = Color3.fromRGB(24,25,34)
                 Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
                 local l = Instance.new("TextLabel", b)
                 l.BackgroundTransparency = 1
                 l.Text = tostring(txt)
                 l.Font = Enum.Font.Gotham
-                l.TextColor3 = theme.text
+                l.TextColor3 = Color3.fromRGB(238,240,248)
                 l.TextXAlignment = Enum.TextXAlignment.Left
                 l.TextScaled = true
                 l.Position = UDim2.new(0, 10, 0, 2)
@@ -999,29 +989,22 @@ function Lib:_spawnWindow(opts)
             end
 
             local function populate(list)
-                for _,c in ipairs(opts:GetChildren()) do
-                    if c:IsA("GuiObject") then c:Destroy() end
-                end
+                for _,c in ipairs(opts:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
                 for _,name in ipairs(list) do
-                    local b = makeOption(name)
-                    b.Parent = opts
+                    local b = makeOption(name); b.Parent = opts
                     b.MouseButton1Click:Connect(function()
                         valueText.Text = tostring(name)
                         toggle(false)
                         if callback then task.spawn(function() pcall(callback, name) end) end
                     end)
                 end
-                task.defer(function()
-                    opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
-                end)
+                task.defer(function() opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y) end)
             end
             populate(items)
 
             local function bindToggleClick(guiObj)
                 guiObj.InputBegan:Connect(function(i)
-                    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-                        toggle()
-                    end
+                    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then toggle() end
                 end)
             end
             bindToggleClick(cap); bindToggleClick(label); bindToggleClick(valueText); bindToggleClick(chevron); bindToggleClick(ico)
@@ -1033,11 +1016,8 @@ function Lib:_spawnWindow(opts)
                 Set=function(v) current=v; valueText.Text=tostring(v); if callback then pcall(callback,v) end end,
                 Get=function() return current end,
                 SetItems=function(newItems, newDefault)
-                    items = newItems or {}
-                    populate(items)
-                    current = newDefault or items[1]
-                    valueText.Text = tostring(current or "")
-                    toggle(false)
+                    items = newItems or {}; populate(items)
+                    current = newDefault or items[1]; valueText.Text = tostring(current or ""); toggle(false)
                 end,
                 Open=function() toggle(true) end,
                 Close=function() toggle(false) end
@@ -1045,9 +1025,7 @@ function Lib:_spawnWindow(opts)
         end
 
         local function openThis()
-            for _,c in ipairs(content:GetChildren()) do
-                if c:IsA("ScrollingFrame") then c.Visible = false end
-            end
+            for _,c in ipairs(content:GetChildren()) do if c:IsA("ScrollingFrame") then c.Visible = false end end
             page.Visible = true
             selectSide(sideBtn)
             pageTitle.Text = "| " .. (def.name or "Tab")
@@ -1068,24 +1046,11 @@ function Lib:_spawnWindow(opts)
         return setmetatable(tab, {__index = tab})
     end
 
-    -- posição inicial
-    if opts and opts.multi then
-        local baseX, baseY, dx, dy = 120, 80, 24, 32
-        local k = (#Lib._openWindows) % 8
-        local px, py = baseX + dx*k, baseY + dy*k
-        local screen = win.Parent and win.Parent.AbsoluteSize or Vector2.new(1280,720)
-        px = math.clamp(px, 0, math.max(0, screen.X - win.AbsoluteSize.X))
-        py = math.clamp(py, 0, math.max(0, screen.Y - win.AbsoluteSize.Y))
-        win.Position = UDim2.fromOffset(px, py)
-    else
-        win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
-    end
+    -- posição
+    win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
 
     -- header buttons
-    btnMin.MouseButton1Click:Connect(function()
-        Lib:_setMainVisible(false)
-    end)
-    btnCls.MouseButton1Click:Connect(function()
+    local function closeAll()
         for i=#Lib._openWindows,1,-1 do
             local g = Lib._openWindows[i]
             if g and g.Parent then g:Destroy() end
@@ -1100,10 +1065,10 @@ function Lib:_spawnWindow(opts)
             Lib._settingsWasOpen = false
         end
         gui:Destroy()
-    end)
-    btnCfg.MouseButton1Click:Connect(function()
-        Lib:_toggleSettings(win)
-    end)
+    end
+    btnMin.MouseButton1Click:Connect(function() Lib:_setMainVisible(false) end)
+    btnCls.MouseButton1Click:Connect(closeAll)
+    btnCfg.MouseButton1Click:Connect(function() Lib:_toggleSettings(win) end)
 
     -- win obj
     local winObj = {}
@@ -1112,19 +1077,13 @@ function Lib:_spawnWindow(opts)
 
     table.insert(Lib._openWindows, gui)
     gui.Destroying:Connect(function()
-        for i,g in ipairs(Lib._openWindows) do
-            if g == gui then table.remove(Lib._openWindows, i) break end
-        end
-        if Lib._currentGui == gui then
-            Lib._currentGui, Lib._currentWinObj = nil, nil
-        end
+        for i,g in ipairs(Lib._openWindows) do if g == gui then table.remove(Lib._openWindows, i) break end end
+        if Lib._currentGui == gui then Lib._currentGui, Lib._currentWinObj = nil, nil end
     end)
 
-    if not (opts and opts.multi) then
-        Lib._currentGui = gui
-        Lib._currentWinObj = winObj
-        Lib._lastOpts = opts
-    end
+    Lib._currentGui = gui
+    Lib._currentWinObj = winObj
+    Lib._lastOpts = opts
 
     return winObj
 end
@@ -1132,14 +1091,9 @@ end
 -- ===== API =====
 function Lib:MakeWindow(opts)
     opts = opts or {}
-    if Lib._singleMode then opts.multi = false end
     Lib._launcherEnabled = not opts.noLauncher
     if opts.discord then Lib:SetDiscord(opts.discord) end
-    if Lib._launcherEnabled and Lib._showLauncher ~= false then
-        ensureLauncher()
-    else
-        destroyLauncher()
-    end
+    if Lib._launcherEnabled and Lib._showLauncher ~= false then ensureLauncher() else destroyLauncher() end
     return self:_spawnWindow(opts)
 end
 
