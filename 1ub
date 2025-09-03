@@ -43,7 +43,7 @@ Lib._minKey = Enum.KeyCode[defaultKeyName] or Enum.KeyCode.M
 -- Discord invite
 Lib._discordLink = (_G.SyniX_Settings and _G.SyniX_Settings.discordLink)
                 or _G.SyniX_DiscordInvite
-                or "https://discord.gg/yourinvite"
+                or "https://discord.gg/BvQ8F4ux7h"
 
 -- ===== Comportamento =====
 Lib._singleMode      = true
