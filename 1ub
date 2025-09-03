@@ -1,14 +1,12 @@
--- SyniXLib.lua v0.4.4 (com Config ⚙, Keybind, Copiar Discord e Toggle da bolinha)
--- UI com Sidebar, Toggle, Button e Dropdown (cabeçalho fixo)
--- - Sidebar sem sobra / ícone maior configurável
--- - Launcher (bolinha) arrastável e para onde soltar (_G.SyniXLauncherPos)
--- - Modo SINGLE window (evita duplicar). X fecha tudo (janela + launcher)
--- - NOVO: Botão ⚙ para abrir Config pequena (sempre on-top)
--- - NOVO: Keybind para minimizar/mostrar o menu
--- - NOVO: Copiar link do Discord
--- - NOVO: Toggle para mostrar/ocultar a bolinha (Launcher)
+-- SyniXLib.lua v0.4.5
+-- Novidades:
+--  - ⚙ Config pequeno sempre on-top
+--  - "-" e Hotkey minimizam a janela principal E o menu de Config
+--  - Copiar Discord com múltiplas tentativas + fallback (TextBox selecionado)
+--  - Toggle "Mostrar Launcher (bolinha)" persiste e respeita estado
+--  - Keybind configurável para minimizar/mostrar (hotkey global)
 
-print("[SyniXLib] loaded v0.4.4")
+print("[SyniXLib] loaded v0.4.5")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -28,14 +26,15 @@ Lib._lastOpts        = nil
 Lib._openWindows     = {}
 
 -- Launcher
-Lib._launcherEnabled = true   -- governado por opts.noLauncher
+Lib._launcherEnabled = true
 Lib._showLauncher    = (_G.SyniX_Settings and _G.SyniX_Settings.showLauncher) ~= false -- default true
 
 -- Config
-Lib._settingsGui   = nil
-Lib._settingsOpen  = false
-Lib._capturingKey  = false
-Lib._hotkeyConn    = nil
+Lib._settingsGui       = nil
+Lib._settingsOpen      = false
+Lib._settingsWasOpen   = false  -- reabre se estava aberto antes de minimizar
+Lib._capturingKey      = false
+Lib._hotkeyConn        = nil
 
 -- Keybind p/ minimizar
 local defaultKeyName = (_G.SyniX_Settings and _G.SyniX_Settings.minKeyName) or "M"
@@ -47,8 +46,8 @@ Lib._discordLink = (_G.SyniX_Settings and _G.SyniX_Settings.discordLink)
                 or "https://discord.gg/yourinvite"
 
 -- ===== Comportamento =====
-Lib._singleMode      = true        -- 1 janela por padrão
-Lib._launcherSnap    = false       -- bolinha NÃO dá snap; fica onde soltar
+Lib._singleMode      = true
+Lib._launcherSnap    = false
 
 -- ===== Tema =====
 local DEFAULT_THEME = {
@@ -126,7 +125,7 @@ local function enableLauncherDrag(btn)
             i.Changed:Connect(function()
                 if i.UserInputState==Enum.UserInputState.End then
                     dragging = false
-                    _G.SyniXLauncherPos = btn.Position -- salva onde soltou
+                    _G.SyniXLauncherPos = btn.Position -- salva posição
                 end
             end)
         end
@@ -148,27 +147,60 @@ end
 
 local function saveSettings()
     _G.SyniX_Settings = _G.SyniX_Settings or {}
-    _G.SyniX_Settings.minKeyName = Lib._minKey and Lib._minKey.Name or "M"
-    _G.SyniX_Settings.showLauncher = (Lib._showLauncher ~= false)
+    _G.SyniX_Settings.minKeyName  = Lib._minKey and Lib._minKey.Name or "M"
+    _G.SyniX_Settings.showLauncher= (Lib._showLauncher ~= false)
     _G.SyniX_Settings.discordLink = Lib._discordLink
 end
 
-local function copyToClipboard(text)
+-- Copiar para clipboard com várias opções + fallback
+local function tryCopy(text)
+    if typeof(text) ~= "string" or #text == 0 then return false, "texto inválido" end
+    local tried = false
     local ok = false
-    if typeof(text) == "string" then
-        local f = rawget(getfenv() or _G, "setclipboard") or rawget(getfenv() or _G, "toclipboard")
-        if f then
-            pcall(function() f(text) ok = true end)
+    local function safecall(fn, ...)
+        local s, e = pcall(fn, ...)
+        return s, e
+    end
+
+    -- 1) setclipboard
+    if rawget(getfenv() or _G, "setclipboard") then
+        tried = true
+        ok = pcall(setclipboard, text)
+        if ok then return true end
+    end
+    -- 2) toclipboard
+    if not ok and rawget(getfenv() or _G, "toclipboard") then
+        tried = true
+        ok = pcall(toclipboard, text)
+        if ok then return true end
+    end
+    -- 3) Synapse / ScriptWare-like
+    if not ok and rawget(_G, "syn") and syn then
+        if syn.write_clipboard then
+            tried = true
+            ok = pcall(syn.write_clipboard, text)
+            if ok then return true end
+        end
+        if not ok and syn.clipboard and syn.clipboard.set then
+            tried = true
+            local s = pcall(syn.clipboard.set, text)
+            if s then return true end
         end
     end
-    return ok
+    -- 4) Outras variantes comuns
+    if not ok and rawget(_G, "clipboard") and clipboard and clipboard.set then
+        tried = true
+        ok = pcall(clipboard.set, text)
+        if ok then return true end
+    end
+
+    return false, tried and "executor bloqueou" or "sem API de clipboard"
 end
 
 -- ===== Launcher =====
 local function ensureLauncher()
     if not Lib._launcherEnabled then return end
     if Lib._showLauncher == false then
-        -- Força destruir se estiver visível
         if Lib._launcherBtn then
             if Lib._launcherBtn.Parent then Lib._launcherBtn:Destroy() end
             Lib._launcherBtn = nil
@@ -209,7 +241,8 @@ local function ensureLauncher()
 
     launcher.MouseButton1Click:Connect(function()
         if Lib._currentGui and Lib._currentGui.Parent then
-            Lib._currentGui.Enabled = not Lib._currentGui.Enabled
+            local newState = not Lib._currentGui.Enabled
+            Lib:_setMainVisible(newState)
         elseif Lib._lastOpts then
             Lib:_spawnWindow(Lib._lastOpts)
         end
@@ -230,10 +263,25 @@ local function destroyLauncher()
 end
 
 local function refreshLauncherVisibility()
-    if Lib._showLauncher == false then
-        destroyLauncher()
+    if Lib._showLauncher == false then destroyLauncher() else ensureLauncher() end
+end
+
+-- ===== Sincronizar visibilidade principal + config =====
+function Lib:_setMainVisible(on)
+    if not (Lib._currentGui and Lib._currentGui.Parent) then return end
+    if on then
+        Lib._currentGui.Enabled = true
+        if Lib._settingsGui and Lib._settingsGui.Parent then
+            Lib._settingsGui.Enabled = (Lib._settingsWasOpen == true)
+            Lib._settingsOpen = Lib._settingsGui.Enabled
+        end
     else
-        ensureLauncher()
+        Lib._settingsWasOpen = (Lib._settingsGui and Lib._settingsGui.Parent and Lib._settingsGui.Enabled) or false
+        if Lib._settingsGui and Lib._settingsGui.Parent then
+            Lib._settingsGui.Enabled = false
+            Lib._settingsOpen = false
+        end
+        Lib._currentGui.Enabled = false
     end
 end
 
@@ -246,7 +294,7 @@ local function bindGlobalHotkey()
         if input.UserInputType == Enum.UserInputType.Keyboard then
             if input.KeyCode == Lib._minKey then
                 if Lib._currentGui and Lib._currentGui.Parent then
-                    Lib._currentGui.Enabled = not Lib._currentGui.Enabled
+                    Lib:_setMainVisible(not Lib._currentGui.Enabled)
                 elseif Lib._lastOpts then
                     Lib:_spawnWindow(Lib._lastOpts)
                 end
@@ -276,7 +324,7 @@ local function buildSettingsUI(anchorWin)
 
     local panel = Instance.new("Frame")
     panel.Name = "Panel"
-    panel.Size = UDim2.fromOffset(320, 190)
+    panel.Size = UDim2.fromOffset(320, 210)
     panel.BackgroundColor3 = Color3.fromRGB(20,21,28)
     panel.Parent = gui
     Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
@@ -298,8 +346,19 @@ local function buildSettingsUI(anchorWin)
     title.TextScaled = true
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Position = UDim2.new(0, 10, 0, 4)
-    title.Size = UDim2.new(1, -60, 1, -8)
+    title.Size = UDim2.new(1, -90, 1, -8)
     Instance.new("UITextSizeConstraint", title).MaxTextSize = 18
+
+    local minCfg = Instance.new("TextButton", head)
+    minCfg.Text = "-"
+    minCfg.Font = Enum.Font.GothamBold
+    minCfg.TextScaled = true
+    minCfg.TextColor3 = Color3.fromRGB(238,240,248)
+    minCfg.Size = UDim2.fromOffset(30,24)
+    minCfg.Position = UDim2.new(1,-70,0.5,-12)
+    minCfg.BackgroundColor3 = Color3.fromRGB(30,32,44)
+    Instance.new("UICorner", minCfg).CornerRadius = UDim.new(0,6)
+    Instance.new("UITextSizeConstraint", minCfg).MaxTextSize = 16
 
     local closeCfg = Instance.new("TextButton", head)
     closeCfg.Text = "X"
@@ -391,18 +450,25 @@ local function buildSettingsUI(anchorWin)
     end
 
     -- Row: Copiar Discord
-    local rowDisc = Instance.new("TextButton", body)
-    rowDisc.Text = ""
-    rowDisc.AutoButtonColor = true
+    local rowDisc = Instance.new("Frame", body)
     rowDisc.Size = UDim2.new(1,0,0,38)
     rowDisc.BackgroundColor3 = Color3.fromRGB(24,25,34)
     Instance.new("UICorner", rowDisc).CornerRadius = UDim.new(0,8)
+
+    local discBtn = Instance.new("TextButton", rowDisc)
+    discBtn.Text = ""
+    discBtn.AutoButtonColor = true
+    discBtn.BackgroundTransparency = 1
+    discBtn.Size = UDim2.new(1,0,1,0)
+    discBtn.Position = UDim2.new(0,0,0,0)
+
     local ic = Instance.new("ImageLabel", rowDisc)
     ic.BackgroundTransparency = 1
     ic.Image = "rbxassetid://14862323455"
     ic.Size = UDim2.fromOffset(18,18)
     ic.Position = UDim2.new(0, 10, 0.5, -9)
     ic.ImageColor3 = Color3.fromRGB(235,235,240)
+
     local lbDisc = Instance.new("TextLabel", rowDisc)
     lbDisc.BackgroundTransparency = 1
     lbDisc.Text = "Copiar link do Discord"
@@ -414,6 +480,14 @@ local function buildSettingsUI(anchorWin)
     lbDisc.Size = UDim2.new(1, -36, 1, 0)
     Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
 
+    -- Fallback: TextBox oculto (aparece só quando precisa)
+    local copyBox = Instance.new("TextBox", panel)
+    copyBox.Visible = false
+    copyBox.Size = UDim2.fromOffset(1,1)
+    copyBox.Position = UDim2.fromOffset(-1000,-1000) -- fora da tela
+    copyBox.TextEditable = true
+    copyBox.Text = ""
+
     -- Toast
     local toast = Instance.new("TextLabel", panel)
     toast.BackgroundTransparency = 1
@@ -421,8 +495,8 @@ local function buildSettingsUI(anchorWin)
     toast.Font = Enum.Font.GothamSemibold
     toast.TextColor3 = Color3.fromRGB(238,240,248)
     toast.TextScaled = true
-    toast.Position = UDim2.new(0.5, -120, 1, -30)
-    toast.Size = UDim2.fromOffset(240, 20)
+    toast.Position = UDim2.new(0.5, -140, 1, -30)
+    toast.Size = UDim2.fromOffset(280, 20)
     toast.Visible = false
     Instance.new("UITextSizeConstraint", toast).MaxTextSize = 14
 
@@ -431,16 +505,22 @@ local function buildSettingsUI(anchorWin)
         toast.Visible = true
         toast.TextTransparency = 1
         Tween:Create(toast, TweenInfo.new(0.15), {TextTransparency = 0}):Play()
-        task.delay(1.2, function()
+        task.delay(1.4, function()
             Tween:Create(toast, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
             task.delay(0.22, function() toast.Visible = false end)
         end)
     end
 
     -- Eventos
+    minCfg.MouseButton1Click:Connect(function()
+        gui.Enabled = false
+        Lib._settingsOpen = false
+    end)
+
     closeCfg.MouseButton1Click:Connect(function()
         gui.Enabled = false
         Lib._settingsOpen = false
+        Lib._settingsWasOpen = false
     end)
 
     tBtn.MouseButton1Click:Connect(function()
@@ -467,12 +547,27 @@ local function buildSettingsUI(anchorWin)
         end)
     end)
 
-    rowDisc.MouseButton1Click:Connect(function()
-        local ok = copyToClipboard(Lib._discordLink)
-        showToast(ok and "Convite copiado!" or "Executor não permite copiar")
+    discBtn.MouseButton1Click:Connect(function()
+        local ok = false
+        do
+            local success = false
+            local s, why = tryCopy(Lib._discordLink)
+            ok = s
+            if not ok then
+                -- fallback: seleciona TextBox e orienta usuário
+                copyBox.Text = Lib._discordLink
+                copyBox.Visible = true
+                copyBox:CaptureFocus()
+                copyBox.CursorPosition = #copyBox.Text + 1
+                copyBox.SelectionStart = 1
+                copyBox.SelectionLength = #copyBox.Text
+                showToast("Pressione Ctrl+C para copiar")
+                task.delay(2.0, function() copyBox.Visible = false end)
+            end
+        end
+        if ok then showToast("Convite copiado!") end
     end)
 
-    -- Posição (perto da janela)
     local function reposition()
         local screenSize = gui.AbsoluteSize
         local px, py = 100, 100
@@ -495,13 +590,16 @@ end
 
 function Lib:_toggleSettings(anchorWin)
     if Lib._settingsGui and Lib._settingsGui.Parent then
-        Lib._settingsGui.Enabled = not Lib._settingsGui.Enabled
-        Lib._settingsOpen = Lib._settingsGui.Enabled
+        local newState = not Lib._settingsGui.Enabled
+        Lib._settingsGui.Enabled = newState
+        Lib._settingsOpen = newState
+        Lib._settingsWasOpen = newState
         return
     end
     local g = buildSettingsUI(anchorWin)
     g.Enabled = true
     Lib._settingsOpen = true
+    Lib._settingsWasOpen = true
 end
 
 -- ===== Construção da janela principal =====
@@ -514,7 +612,6 @@ function Lib:_spawnWindow(opts)
     if opts and opts.size then theme.winSize = opts.size end
     if opts and opts.discord then Lib:SetDiscord(opts.discord) end
 
-    -- reusa janela no modo single
     if not (opts and opts.multi) then
         if Lib._currentGui and Lib._currentGui.Parent then
             Lib._currentGui.Enabled = true
@@ -575,7 +672,7 @@ function Lib:_spawnWindow(opts)
         Instance.new("UITextSizeConstraint", b).MaxTextSize = 16
         return b
     end
-    -- Ordem (da direita p/ esquerda): X | - | ⚙
+    -- Ordem: X | - | ⚙
     local btnCls = mkHeadBtn("X"); btnCls.Parent = header; btnCls.Size = UDim2.fromOffset(32,26); btnCls.Position = UDim2.new(1,-38,0.5,-13)
     local btnMin = mkHeadBtn("-"); btnMin.Parent = header; btnMin.Size = UDim2.fromOffset(32,26); btnMin.Position = UDim2.new(1,-74,0.5,-13)
     local btnCfg = mkHeadBtn("⚙"); btnCfg.Parent = header; btnCfg.Size = UDim2.fromOffset(32,26); btnCfg.Position = UDim2.new(1,-110,0.5,-13)
@@ -586,7 +683,7 @@ function Lib:_spawnWindow(opts)
     body.Position = UDim2.new(0, 6, 0, 60)
     body.Size = UDim2.new(1, -12, 1, -68)
 
-    -- Sidebar (ScrollingFrame)
+    -- Sidebar
     local sidebar = Instance.new("ScrollingFrame", body)
     sidebar.Name = "Sidebar"
     sidebar.BackgroundColor3 = theme.bg_sidebar
@@ -623,11 +720,10 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    -- ==== LATERAL: botões e Widgets ====
+    -- ==== LATERAL / Abas / Widgets (mesma API de antes) ====
     local function makeSideItem(iconId, text)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, 0, 0, 38)
-        btn.Position = UDim2.new(0, 0, 0, 0)
         btn.BackgroundColor3 = theme.card
         btn.AutoButtonColor = false
         btn.Text = ""
@@ -662,7 +758,6 @@ function Lib:_spawnWindow(opts)
         Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
     end
 
-    -- ===== Abas / Widgets =====
     local function MakeTab(def)
         local sideBtn = makeSideItem(def.icon, def.name or "Tab")
         sideBtn.Parent = sidebar
@@ -740,12 +835,12 @@ function Lib:_spawnWindow(opts)
             local value = default and true or false
             local function paint(v)
                 if v then
-                    Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_on}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = theme.toggle_on}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14),
                         {Position = UDim2.new(0, onX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_on}):Play()
                 else
-                    Tween:Create(btn,  TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = theme.toggle_off}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = theme.toggle_off}):Play()
+                    Tween:Create(knob, TweenInfo.new(0.14),
                         {Position = UDim2.new(0, offX, 0.5, -math.floor(theme.knobSize.Y/2)), BackgroundColor3 = theme.knob_off}):Play()
                 end
             end
@@ -757,10 +852,8 @@ function Lib:_spawnWindow(opts)
                 if callback then task.spawn(function() pcall(callback, value) end) end
             end)
 
-            return {
-                Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
-                Get=function() return value end
-            }
+            return { Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
+                     Get=function() return value end }
         end
 
         local function TAddButton(iconId, text, callback)
@@ -792,7 +885,6 @@ function Lib:_spawnWindow(opts)
             row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
         end
 
-        -- ===== Dropdown =====
         local function TAddDropdown(iconId, labelText, items, default, callback)
             items = items or {}
             local capH = theme.rowHeight
@@ -902,10 +994,8 @@ function Lib:_spawnWindow(opts)
                 open = wantOpen
                 chevron.Text = open and "▲" or "▼"
                 local listH = open and heightForList() or 0
-                Tween:Create(row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
-                Tween:Create(opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = UDim2.new(1, -16, 0, listH)}):Play()
+                Tween:Create(row,  TweenInfo.new(0.16), {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
+                Tween:Create(opts, TweenInfo.new(0.16), {Size = UDim2.new(1, -16, 0, listH)}):Play()
             end
 
             local function populate(list)
@@ -934,21 +1024,13 @@ function Lib:_spawnWindow(opts)
                     end
                 end)
             end
-            bindToggleClick(cap)
-            bindToggleClick(label)
-            bindToggleClick(valueText)
-            bindToggleClick(chevron)
-            bindToggleClick(ico)
+            bindToggleClick(cap); bindToggleClick(label); bindToggleClick(valueText); bindToggleClick(chevron); bindToggleClick(ico)
 
             local current = default or items[1]
             if current then valueText.Text = tostring(current) end
 
             return {
-                Set=function(v)
-                    current=v
-                    valueText.Text=tostring(v)
-                    if callback then pcall(callback,v) end
-                end,
+                Set=function(v) current=v; valueText.Text=tostring(v); if callback then pcall(callback,v) end end,
                 Get=function() return current end,
                 SetItems=function(newItems, newDefault)
                     items = newItems or {}
@@ -978,7 +1060,6 @@ function Lib:_spawnWindow(opts)
         function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
 
         sideBtn.MouseButton1Click:Connect(openThis)
-
         if not sidebar:FindFirstChild("_firstTabSelected") then
             local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
             openThis()
@@ -1001,7 +1082,9 @@ function Lib:_spawnWindow(opts)
     end
 
     -- header buttons
-    btnMin.MouseButton1Click:Connect(function() gui.Enabled = false end)
+    btnMin.MouseButton1Click:Connect(function()
+        Lib:_setMainVisible(false)
+    end)
     btnCls.MouseButton1Click:Connect(function()
         for i=#Lib._openWindows,1,-1 do
             local g = Lib._openWindows[i]
@@ -1011,7 +1094,11 @@ function Lib:_spawnWindow(opts)
         Lib._currentWinObj = nil
         Lib._currentGui = nil
         destroyLauncher()
-        if Lib._settingsGui and Lib._settingsGui.Parent then Lib._settingsGui.Enabled=false end
+        if Lib._settingsGui and Lib._settingsGui.Parent then
+            Lib._settingsGui.Enabled = false
+            Lib._settingsOpen = false
+            Lib._settingsWasOpen = false
+        end
         gui:Destroy()
     end)
     btnCfg.MouseButton1Click:Connect(function()
@@ -1048,7 +1135,6 @@ function Lib:MakeWindow(opts)
     if Lib._singleMode then opts.multi = false end
     Lib._launcherEnabled = not opts.noLauncher
     if opts.discord then Lib:SetDiscord(opts.discord) end
-    -- respeita toggle "mostrar bolinha"
     if Lib._launcherEnabled and Lib._showLauncher ~= false then
         ensureLauncher()
     else
@@ -1057,7 +1143,6 @@ function Lib:MakeWindow(opts)
     return self:_spawnWindow(opts)
 end
 
--- expõe método para trocar key via script (opcional)
 function Lib:SetMinimizeKey(keyCode)
     if typeof(keyCode) == "EnumItem" and keyCode.EnumType == Enum.KeyCode then
         Lib._minKey = keyCode
