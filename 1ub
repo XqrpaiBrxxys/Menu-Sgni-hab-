@@ -1,8 +1,9 @@
--- SyniXLib.lua v0.4.9
--- - Dropdown com UIListLayout (itens não sobrepõem) + API :Refresh(list, keepOpen, newDefault)
--- - Config sem escudo (menu atrás continua usável) e header só com "-"
--- - Botão "Link do Discord" copia com setclipboard (sem prints) + toast "Discord link copied!"
--- - Hotkey global para minimizar (configurável)
+-- SyniXLib.lua v0.4.10
+-- - Dropdown com UIListLayout (itens empilhados) + :Refresh(list, keepOpen, newDefault)
+-- - Config sem escudo; header só com "-"
+-- - Botão "Link do Discord": setclipboard + toast "Discord link copied!"
+-- - Hotkey global para minimizar configurável
+-- - FIX: FindFirstChild("_firstTabSelected")
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -515,11 +516,11 @@ function Lib:_toggleSettings(anchorWin)
     Lib._settingsWasOpen = true
 end
 
--- ===== DROPDOWN CORE (com UIListLayout + Refresh) =====
+-- ===== DROPDOWN CORE (UIListLayout + Refresh) =====
 local function makeDropdownAPI(state)
     -- state: { items, current, open, row, opts, valueText, chevron, capH, maxVisible, callback }
 
-    -- Layout para empilhar as opções
+    -- Layout das opções
     local optsList = Instance.new("UIListLayout", state.opts)
     optsList.Padding = UDim.new(0, 6)
     optsList.SortOrder = Enum.SortOrder.LayoutOrder
@@ -894,7 +895,8 @@ local function makeTabAPI(def, containers, theme)
     function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
 
     sideBtn.MouseButton1Click:Connect(openThis)
-    if not sidebar:FindChildWhichIsA("BoolValue") then
+    -- FIX: usar FindFirstChild em vez de chamada inválida
+    if not sidebar:FindFirstChild("_firstTabSelected") then
         local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
         openThis()
     end
