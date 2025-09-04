@@ -282,7 +282,7 @@ local function buildSettingsUI(anchorWin)
 
     local title = Instance.new("TextLabel", head)
     title.BackgroundTransparency = 1
-    title.Text = "Configurações"
+    title.Text = "SETTINGS"
     title.Font = Enum.Font.GothamBold
     title.TextColor3 = Color3.fromRGB(238,240,248)
     title.TextScaled = true
@@ -324,7 +324,7 @@ local function buildSettingsUI(anchorWin)
 
     local lbKey = Instance.new("TextLabel", rowKey)
     lbKey.BackgroundTransparency = 1
-    lbKey.Text = "MINIMIZE MENU KEY (PC)"
+    lbKey.Text = "Hide Menu"
     lbKey.Font = Enum.Font.GothamSemibold
     lbKey.TextScaled = true
     lbKey.TextXAlignment = Enum.TextXAlignment.Left
