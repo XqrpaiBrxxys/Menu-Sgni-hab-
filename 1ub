@@ -1,10 +1,8 @@
--- SyniXLib.lua v0.4.8
--- Novidades:
---  - Dropdown agora expõe :Refresh(list, keepOpen)
---      * Preserva seleção se possível; senão escolhe o primeiro
---      * Se keepOpen=true mantém/abre aberto após atualizar
---  - Mantido: Copy Discord com setclipboard (sem prints) + toast "Discord link copied!"
---  - Config sem escudo (menu atrás continua usável) e header só com "-"
+-- SyniXLib.lua v0.4.9
+-- - Dropdown com UIListLayout (itens não sobrepõem) + API :Refresh(list, keepOpen, newDefault)
+-- - Config sem escudo (menu atrás continua usável) e header só com "-"
+-- - Botão "Link do Discord" copia com setclipboard (sem prints) + toast "Discord link copied!"
+-- - Hotkey global para minimizar (configurável)
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -242,7 +240,7 @@ function Lib:SetDiscord(link)
     end
 end
 
--- Copy Discord com setclipboard; sem prints
+-- Copiar link do Discord (sem prints)
 local function CopyDiscordLink()
     local link = (Lib._discordLink and tostring(Lib._discordLink)) or ""
     if link ~= "" and setclipboard then
@@ -261,7 +259,7 @@ local function buildSettingsUI(anchorWin)
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.Parent = player:WaitForChild("PlayerGui")
 
-    -- Painel Config
+    -- Painel
     local panel = Instance.new("Frame")
     panel.Name = "Panel"
     panel.Size = UDim2.fromOffset(320, 210)
@@ -517,28 +515,41 @@ function Lib:_toggleSettings(anchorWin)
     Lib._settingsWasOpen = true
 end
 
--- ===== Componentes de janela =====
+-- ===== DROPDOWN CORE (com UIListLayout + Refresh) =====
 local function makeDropdownAPI(state)
-    -- state: { items, current, open, row, opts, valueText, chevron, capH, maxVisible }
+    -- state: { items, current, open, row, opts, valueText, chevron, capH, maxVisible, callback }
+
+    -- Layout para empilhar as opções
+    local optsList = Instance.new("UIListLayout", state.opts)
+    optsList.Padding = UDim.new(0, 6)
+    optsList.SortOrder = Enum.SortOrder.LayoutOrder
+
+    local function recomputeCanvas()
+        state.opts.CanvasSize = UDim2.new(0, 0, 0, optsList.AbsoluteContentSize.Y)
+    end
+    optsList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(recomputeCanvas)
+
     local api = {}
 
     local function heightForList()
         local count = #state.items
         if count == 0 then return 0 end
-        local fullH = (count * 32) + ((count-1) * 6) + 8
-        local maxH  = (state.maxVisible * 32) + ((state.maxVisible-1) * 6) + 8
+        local rowH, pad, extra = 32, 6, 8
+        local fullH = (count * rowH) + math.max(0, (count-1)) * pad + extra
+        local maxVisible = state.maxVisible or 8
+        local maxH  = (maxVisible * rowH) + math.max(0, (maxVisible-1)) * pad + extra
         return math.min(fullH, maxH)
     end
 
     local function setOpen(want)
-        local wantOpen = (want==nil) and (not state.open) or want
+        local wantOpen = (want == nil) and (not state.open) or want
         state.open = wantOpen
         state.chevron.Text = state.open and "▲" or "▼"
         local listH = state.open and heightForList() or 0
         Tween:Create(state.row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(1, 0, 0, state.capH + listH)}):Play()
+            { Size = UDim2.new(1, 0, 0, state.capH + listH) }):Play()
         Tween:Create(state.opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Size = UDim2.new(1, -16, 0, listH)}):Play()
+            { Size = UDim2.new(1, -16, 0, listH) }):Play()
     end
 
     local function populate(list)
@@ -552,6 +563,7 @@ local function makeDropdownAPI(state)
             b.Size = UDim2.new(1, 0, 0, 32)
             b.BackgroundColor3 = Color3.fromRGB(24,25,34)
             Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+
             local l = Instance.new("TextLabel", b)
             l.BackgroundTransparency = 1
             l.Text = tostring(name)
@@ -562,6 +574,7 @@ local function makeDropdownAPI(state)
             l.Position = UDim2.new(0, 10, 0, 2)
             l.Size = UDim2.new(1, -20, 1, -4)
             Instance.new("UITextSizeConstraint", l).MaxTextSize = 14
+
             b.Parent = state.opts
             b.MouseButton1Click:Connect(function()
                 state.current = tostring(name)
@@ -570,15 +583,7 @@ local function makeDropdownAPI(state)
                 if state.callback then task.spawn(function() pcall(state.callback, state.current) end) end
             end)
         end
-        task.defer(function()
-            local total = 0
-            for _,child in ipairs(state.opts:GetChildren()) do
-                if child:IsA("GuiObject") then
-                    total += child.AbsoluteSize.Y
-                end
-            end
-            state.opts.CanvasSize = UDim2.new(0,0,0, total)
-        end)
+        task.defer(recomputeCanvas)
     end
 
     function api:Set(v)
@@ -589,21 +594,18 @@ local function makeDropdownAPI(state)
     function api:Get() return state.current end
     function api:Open() setOpen(true) end
     function api:Close() setOpen(false) end
+    function api:_isOpen() return state.open end
 
-    -- antigo SetItems -> usa Refresh por baixo
     function api:SetItems(list, newDefault)
         self:Refresh(list, false, newDefault)
     end
 
-    -- NOVO Refresh(list, keepOpen, newDefault)
+    -- Refresh(list, keepOpen, newDefault)
     function api:Refresh(list, keepOpen, newDefault)
         state.items = list or {}
         populate(state.items)
 
-        local keep = state.current
-        if newDefault ~= nil then keep = tostring(newDefault) end
-
-        -- mantém seleção se existente; senão primeiro item
+        local keep = (newDefault ~= nil) and tostring(newDefault) or state.current
         if keep and table.find(state.items, keep) then
             state.current = keep
         else
@@ -620,6 +622,7 @@ local function makeDropdownAPI(state)
     return api
 end
 
+-- ===== Construção de abas/widgets (usa makeDropdownAPI) =====
 local function makeTabAPI(def, containers, theme)
     local sidebar, content = containers.sidebar, containers.content
     local DEFAULT = DEFAULT_THEME
@@ -859,37 +862,18 @@ local function makeTabAPI(def, containers, theme)
             callback = callback,
         }
 
-        -- Bind abre/fecha no cabeçalho
-        local function bindToggleClick(guiObj)
-            guiObj.InputBegan:Connect(function(i)
-                if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-                    if state.api then state.api:Open() else end
-                end
-            end)
-        end
-        -- Como queremos toggle (não só open), criamos função que inverte:
-        local function bindToggleInvert(guiObj)
-            guiObj.InputBegan:Connect(function(i)
-                if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-                    if state.api then
-                        if state.api._isOpen and state.api:_isOpen() then state.api:Close() else state.api:Open() end
-                    end
-                end
-            end)
-        end
-
         -- API
         state.api = makeDropdownAPI(state)
 
-        -- substitui bind para inverter (abre/fecha)
-        local function bindAll()
-            bindToggleInvert(cap)
-            bindToggleInvert(label)
-            bindToggleInvert(valueText)
-            bindToggleInvert(chevron)
-            bindToggleInvert(ico)
+        -- Toggle no cabeçalho
+        local function bindToggleInvert(guiObj)
+            guiObj.InputBegan:Connect(function(i)
+                if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+                    if state.api:_isOpen() then state.api:Close() else state.api:Open() end
+                end
+            end)
         end
-        bindAll()
+        bindToggleInvert(cap); bindToggleInvert(label); bindToggleInvert(valueText); bindToggleInvert(chevron); bindToggleInvert(ico)
 
         return state.api
     end
@@ -910,7 +894,7 @@ local function makeTabAPI(def, containers, theme)
     function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
 
     sideBtn.MouseButton1Click:Connect(openThis)
-    if not sidebar:FindFirstChild("_firstTabSelected") then
+    if not sidebar:FindChildWhichIsA("BoolValue") then
         local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
         openThis()
     end
