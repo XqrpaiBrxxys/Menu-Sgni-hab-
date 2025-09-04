@@ -1,9 +1,10 @@
--- SyniXLib.lua v0.4.7
--- Mudanças desta versão:
---  - Botão "Link do Discord" no Config: usa apenas setclipboard (sem prints)
---  - Mensagem ao copiar: "Discord link copied!" (toast no próprio Config)
---  - Removido qualquer bloqueio de clique atrás do Config (sem escudo)
---  - Header do Config só com "-" (sem X). Hotkey e "-" seguem funcionando
+-- SyniXLib.lua v0.4.8
+-- Novidades:
+--  - Dropdown agora expõe :Refresh(list, keepOpen)
+--      * Preserva seleção se possível; senão escolhe o primeiro
+--      * Se keepOpen=true mantém/abre aberto após atualizar
+--  - Mantido: Copy Discord com setclipboard (sem prints) + toast "Discord link copied!"
+--  - Config sem escudo (menu atrás continua usável) e header só com "-"
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -36,7 +37,7 @@ Lib._hotkeyConn        = nil
 local defaultKeyName = (_G.SyniX_Settings and _G.SyniX_Settings.minKeyName) or "M"
 Lib._minKey = Enum.KeyCode[defaultKeyName] or Enum.KeyCode.M
 
--- Discord invite (pode sobrescrever via _G.SyniX_DiscordInvite ou opts.discord)
+-- Discord invite
 Lib._discordLink = (_G.SyniX_Settings and _G.SyniX_Settings.discordLink)
                 or _G.SyniX_DiscordInvite
                 or "https://discord.gg/yourinvite"
@@ -204,7 +205,6 @@ function Lib:_setMainVisible(on)
     if on then
         Lib._currentGui.Enabled = true
         if Lib._settingsGui and Lib._settingsGui.Parent then
-            -- mantém o estado que estava
             Lib._settingsGui.Enabled = (Lib._settingsWasOpen == true)
             Lib._settingsOpen = Lib._settingsGui.Enabled
         end
@@ -234,7 +234,7 @@ local function bindGlobalHotkey()
 end
 bindGlobalHotkey()
 
--- ===== Config (sem escudo; só o painel) =====
+-- ===== Config (sem escudo) =====
 function Lib:SetDiscord(link)
     if type(link)=="string" and #link>0 then
         Lib._discordLink = link
@@ -242,7 +242,7 @@ function Lib:SetDiscord(link)
     end
 end
 
--- Função para copiar o link do Discord (apenas setclipboard; sem prints)
+-- Copy Discord com setclipboard; sem prints
 local function CopyDiscordLink()
     local link = (Lib._discordLink and tostring(Lib._discordLink)) or ""
     if link ~= "" and setclipboard then
@@ -257,11 +257,9 @@ local function buildSettingsUI(anchorWin)
     local gui = Instance.new("ScreenGui")
     gui.Name = "SyniX_Settings"
     gui.IgnoreGuiInset, gui.ResetOnSpawn = true, false
-    gui.DisplayOrder = 1200 -- na frente do menu
+    gui.DisplayOrder = 1200
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.Parent = player:WaitForChild("PlayerGui")
-
-    -- NÃO TEM ESCUDO. Só o painel, para o menu continuar utilizável ao fundo.
 
     -- Painel Config
     local panel = Instance.new("Frame")
@@ -422,7 +420,7 @@ local function buildSettingsUI(anchorWin)
     lbDisc.ZIndex = 12
     Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
 
-    -- Toast (para confirmar "Discord link copied!")
+    -- Toast
     local toast = Instance.new("TextLabel", panel)
     toast.BackgroundTransparency = 1
     toast.Text = ""
@@ -446,7 +444,7 @@ local function buildSettingsUI(anchorWin)
         end)
     end
 
-    -- Eventos
+    -- Eventos Config
     minCfg.MouseButton1Click:Connect(function()
         gui.Enabled = false
         Lib._settingsOpen = false
@@ -477,7 +475,6 @@ local function buildSettingsUI(anchorWin)
     end)
 
     rowDisc.MouseButton1Click:Connect(function()
-        -- Atualiza a partir do _G se o user setou
         if _G.SyniX_DiscordInvite and type(_G.SyniX_DiscordInvite)=="string" and #_G.SyniX_DiscordInvite>0 then
             Lib._discordLink = _G.SyniX_DiscordInvite
             saveSettings()
@@ -486,7 +483,7 @@ local function buildSettingsUI(anchorWin)
         showToast("Discord link copied!")
     end)
 
-    -- posiciona ao lado da janela (sem bloquear nada atrás)
+    -- posiciona ao lado da janela
     local function reposition()
         local screenSize = gui.AbsoluteSize
         local px, py = 100, 100
@@ -518,6 +515,407 @@ function Lib:_toggleSettings(anchorWin)
     g.Enabled = true
     Lib._settingsOpen = true
     Lib._settingsWasOpen = true
+end
+
+-- ===== Componentes de janela =====
+local function makeDropdownAPI(state)
+    -- state: { items, current, open, row, opts, valueText, chevron, capH, maxVisible }
+    local api = {}
+
+    local function heightForList()
+        local count = #state.items
+        if count == 0 then return 0 end
+        local fullH = (count * 32) + ((count-1) * 6) + 8
+        local maxH  = (state.maxVisible * 32) + ((state.maxVisible-1) * 6) + 8
+        return math.min(fullH, maxH)
+    end
+
+    local function setOpen(want)
+        local wantOpen = (want==nil) and (not state.open) or want
+        state.open = wantOpen
+        state.chevron.Text = state.open and "▲" or "▼"
+        local listH = state.open and heightForList() or 0
+        Tween:Create(state.row,  TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = UDim2.new(1, 0, 0, state.capH + listH)}):Play()
+        Tween:Create(state.opts, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = UDim2.new(1, -16, 0, listH)}):Play()
+    end
+
+    local function populate(list)
+        for _,c in ipairs(state.opts:GetChildren()) do
+            if c:IsA("GuiObject") then c:Destroy() end
+        end
+        for _,name in ipairs(list) do
+            local b = Instance.new("TextButton")
+            b.Text = ""
+            b.AutoButtonColor = true
+            b.Size = UDim2.new(1, 0, 0, 32)
+            b.BackgroundColor3 = Color3.fromRGB(24,25,34)
+            Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+            local l = Instance.new("TextLabel", b)
+            l.BackgroundTransparency = 1
+            l.Text = tostring(name)
+            l.Font = Enum.Font.Gotham
+            l.TextColor3 = Color3.fromRGB(238,240,248)
+            l.TextXAlignment = Enum.TextXAlignment.Left
+            l.TextScaled = true
+            l.Position = UDim2.new(0, 10, 0, 2)
+            l.Size = UDim2.new(1, -20, 1, -4)
+            Instance.new("UITextSizeConstraint", l).MaxTextSize = 14
+            b.Parent = state.opts
+            b.MouseButton1Click:Connect(function()
+                state.current = tostring(name)
+                state.valueText.Text = state.current
+                setOpen(false)
+                if state.callback then task.spawn(function() pcall(state.callback, state.current) end) end
+            end)
+        end
+        task.defer(function()
+            local total = 0
+            for _,child in ipairs(state.opts:GetChildren()) do
+                if child:IsA("GuiObject") then
+                    total += child.AbsoluteSize.Y
+                end
+            end
+            state.opts.CanvasSize = UDim2.new(0,0,0, total)
+        end)
+    end
+
+    function api:Set(v)
+        state.current = (v ~= nil) and tostring(v) or ""
+        state.valueText.Text = state.current
+        if state.callback then pcall(state.callback, state.current) end
+    end
+    function api:Get() return state.current end
+    function api:Open() setOpen(true) end
+    function api:Close() setOpen(false) end
+
+    -- antigo SetItems -> usa Refresh por baixo
+    function api:SetItems(list, newDefault)
+        self:Refresh(list, false, newDefault)
+    end
+
+    -- NOVO Refresh(list, keepOpen, newDefault)
+    function api:Refresh(list, keepOpen, newDefault)
+        state.items = list or {}
+        populate(state.items)
+
+        local keep = state.current
+        if newDefault ~= nil then keep = tostring(newDefault) end
+
+        -- mantém seleção se existente; senão primeiro item
+        if keep and table.find(state.items, keep) then
+            state.current = keep
+        else
+            state.current = state.items[1] and tostring(state.items[1]) or ""
+        end
+        state.valueText.Text = state.current
+
+        if keepOpen then setOpen(true) else setOpen(false) end
+        if state.callback then pcall(state.callback, state.current) end
+    end
+
+    -- inicial
+    populate(state.items)
+    return api
+end
+
+local function makeTabAPI(def, containers, theme)
+    local sidebar, content = containers.sidebar, containers.content
+    local DEFAULT = DEFAULT_THEME
+
+    local function makeSideItem(iconId, text)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, 0, 0, 38)
+        btn.BackgroundColor3 = DEFAULT.card
+        btn.AutoButtonColor = false
+        btn.Text = ""
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+
+        local ic = Instance.new("ImageLabel", btn)
+        ic.BackgroundTransparency = 1
+        ic.Image = iconId or "rbxassetid://14862323455"
+        ic.Size = UDim2.fromOffset(DEFAULT.sideIconSize, DEFAULT.sideIconSize)
+        ic.Position = UDim2.new(0, 8, 0.5, -DEFAULT.sideIconSize/2)
+        ic.ImageColor3 = Color3.fromRGB(230,230,235)
+
+        local lb = Instance.new("TextLabel", btn)
+        lb.BackgroundTransparency = 1
+        lb.Text = text
+        lb.Font = Enum.Font.GothamSemibold
+        lb.TextXAlignment = Enum.TextXAlignment.Left
+        lb.TextColor3 = DEFAULT.text
+        lb.TextScaled = true
+        lb.Position = UDim2.new(0, 8 + DEFAULT.sideIconSize + 8, 0, 4)
+        lb.Size = UDim2.new(1, -(8 + DEFAULT.sideIconSize + 8 + 8), 1, -8)
+        Instance.new("UITextSizeConstraint", lb).MaxTextSize = 16
+        return btn
+    end
+    local function selectSide(sideBtn)
+        for _,c in ipairs(sidebar:GetChildren()) do
+            if c:IsA("TextButton") then Tween:Create(c, TweenInfo.new(0.15), {BackgroundColor3 = DEFAULT.card}):Play() end
+        end
+        Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
+    end
+
+    local sideBtn = makeSideItem(def.icon, def.name or "Tab"); sideBtn.Parent = sidebar
+    local page = Instance.new("ScrollingFrame", content)
+    page.BackgroundTransparency = 1
+    page.Position = UDim2.new(0, 8, 0, 44)
+    page.Size = UDim2.new(1, -16, 1, -54)
+    page.ScrollBarThickness = 6
+    page.Visible = false
+    local pageList = Instance.new("UIListLayout", page)
+    pageList.Padding = UDim.new(0,8)
+    pageList.SortOrder = Enum.SortOrder.LayoutOrder
+    pageList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.new(0,0,0,pageList.AbsoluteContentSize.Y + 8)
+    end)
+
+    local function TAddSection(text)
+        local s = Instance.new("TextLabel", page)
+        s.BackgroundTransparency = 1
+        s.Text = text
+        s.Font = Enum.Font.GothamBold
+        s.TextXAlignment = Enum.TextXAlignment.Left
+        s.TextColor3 = DEFAULT.text
+        s.TextScaled = true
+        s.Size = UDim2.new(1,0,0,24)
+        Instance.new("UITextSizeConstraint", s).MaxTextSize = 16
+        return s
+    end
+
+    local function TAddToggle(iconId, labelText, default, callback)
+        local row = Instance.new("Frame", page)
+        row.Size = UDim2.new(1, 0, 0, DEFAULT.rowHeight)
+        row.BackgroundColor3 = DEFAULT.row
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+        local ico = Instance.new("ImageLabel", row)
+        ico.BackgroundTransparency = 1
+        ico.Image = iconId or "rbxassetid://14862323455"
+        ico.Size = UDim2.fromOffset(18,18)
+        ico.Position = UDim2.new(0, 12, 0.5, -9)
+        ico.ImageColor3 = Color3.fromRGB(235,235,240)
+
+        local label = Instance.new("TextLabel", row)
+        label.BackgroundTransparency = 1
+        label.Text = string.upper(labelText or "TOGGLE")
+        label.Font = Enum.Font.GothamSemibold
+        label.TextColor3 = DEFAULT.text
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextScaled = true
+        label.Position = UDim2.new(0, 36, 0, 2)
+        label.Size = UDim2.new(1, - (DEFAULT.toggleSize.X + 70), 1, -4)
+        Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
+
+        local btn = Instance.new("TextButton", row)
+        btn.Text = ""
+        btn.AutoButtonColor = false
+        btn.Size = UDim2.fromOffset(DEFAULT.toggleSize.X, DEFAULT.toggleSize.Y)
+        btn.Position = UDim2.new(1, -(DEFAULT.toggleSize.X + 12), 0.5, -math.floor(DEFAULT.toggleSize.Y/2))
+        btn.BackgroundColor3 = DEFAULT.toggle_off
+        btn.ClipsDescendants = true
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
+
+        local knob = Instance.new("Frame", btn)
+        knob.Size = UDim2.fromOffset(DEFAULT.knobSize.X, DEFAULT.knobSize.Y)
+        knob.Position = UDim2.new(0, 2, 0.5, -math.floor(DEFAULT.knobSize.Y/2))
+        knob.BackgroundColor3 = DEFAULT.knob_off
+        Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+        local kS = Instance.new("UIStroke", knob); kS.Transparency = 0.7
+
+        local offX, onX = 2, math.max(2, DEFAULT.toggleSize.X - DEFAULT.knobSize.X - 2)
+
+        local value = default and true or false
+        local function paint(v)
+            if v then
+                Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = DEFAULT.toggle_on}):Play()
+                Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, onX, 0.5, -math.floor(DEFAULT.knobSize.Y/2)), BackgroundColor3 = Color3.fromRGB(22,24,32)}):Play()
+            else
+                Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = DEFAULT.toggle_off}):Play()
+                Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, offX, 0.5, -math.floor(DEFAULT.knobSize.Y/2)), BackgroundColor3 = DEFAULT.knob_off}):Play()
+            end
+        end
+        paint(value)
+
+        btn.MouseButton1Click:Connect(function()
+            value = not value
+            paint(value)
+            if callback then task.spawn(function() pcall(callback, value) end) end
+        end)
+
+        return { Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
+                 Get=function() return value end }
+    end
+
+    local function TAddButton(iconId, text, callback)
+        local row = Instance.new("TextButton", page)
+        row.Text = ""
+        row.Size = UDim2.new(1, 0, 0, 44)
+        row.BackgroundColor3 = DEFAULT.card
+        row.AutoButtonColor = true
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
+
+        local ico = Instance.new("ImageLabel", row)
+        ico.BackgroundTransparency = 1
+        ico.Image = iconId or "rbxassetid://14862323455"
+        ico.Size = UDim2.fromOffset(18,18)
+        ico.Position = UDim2.new(0, 12, 0.5, -9)
+        ico.ImageColor3 = Color3.fromRGB(235,235,240)
+
+        local lbl = Instance.new("TextLabel", row)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = text or "BUTTON"
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextColor3 = DEFAULT.text
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextScaled = true
+        lbl.Position = UDim2.new(0, 36, 0, 0)
+        lbl.Size = UDim2.new(1, -36, 1, 0)
+        Instance.new("UITextSizeConstraint", lbl).MaxTextSize = 16
+
+        row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
+    end
+
+    local function TAddDropdown(iconId, labelText, items, default, callback)
+        items = items or {}
+        local capH = DEFAULT.rowHeight
+        local maxVisible = 8
+
+        local row = Instance.new("Frame", page)
+        row.Size = UDim2.new(1, 0, 0, capH)
+        row.BackgroundColor3 = DEFAULT.row
+        row.ClipsDescendants = true
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+        local cap = Instance.new("Frame", row)
+        cap.BackgroundTransparency = 1
+        cap.Size = UDim2.new(1, 0, 0, capH)
+        cap.ZIndex = 2
+
+        local ico = Instance.new("ImageLabel", cap)
+        ico.BackgroundTransparency = 1
+        ico.Image = iconId or "rbxassetid://14862323455"
+        ico.Size = UDim2.fromOffset(18,18)
+        ico.Position = UDim2.new(0, 12, 0.5, -9)
+        ico.ImageColor3 = Color3.fromRGB(235,235,240)
+        ico.ZIndex = 2
+
+        local label = Instance.new("TextLabel", cap)
+        label.BackgroundTransparency = 1
+        label.Text = string.upper(labelText or "DROPDOWN")
+        label.Font = Enum.Font.GothamSemibold
+        label.TextColor3 = DEFAULT.text
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextScaled = true
+        label.Position = UDim2.new(0, 36, 0, 2)
+        label.Size = UDim2.new(1, -180, 1, -4)
+        Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
+        label.ZIndex = 2
+
+        local valueText = Instance.new("TextLabel", cap)
+        valueText.BackgroundTransparency = 1
+        valueText.Text = tostring(default or (items[1] or ""))
+        valueText.Font = Enum.Font.Gotham
+        valueText.TextColor3 = DEFAULT.text
+        valueText.TextXAlignment = Enum.TextXAlignment.Right
+        valueText.TextScaled = true
+        valueText.Position = UDim2.new(0, 0, 0, 6)
+        valueText.Size = UDim2.new(1, -56, 1, -12)
+        Instance.new("UITextSizeConstraint", valueText).MaxTextSize = 14
+        valueText.ZIndex = 2
+
+        local chevron = Instance.new("TextLabel", cap)
+        chevron.BackgroundTransparency = 1
+        chevron.Text = "▼"
+        chevron.Font = Enum.Font.GothamBold
+        chevron.TextColor3 = DEFAULT.text
+        chevron.TextScaled = true
+        chevron.Position = UDim2.new(1, -40, 0, 8)
+        chevron.Size = UDim2.fromOffset(28, 28)
+        Instance.new("UITextSizeConstraint", chevron).MaxTextSize = 16
+        chevron.ZIndex = 2
+
+        local opts = Instance.new("ScrollingFrame", row)
+        opts.BackgroundTransparency = 1
+        opts.Position = UDim2.new(0, 8, 0, capH)
+        opts.Size = UDim2.new(1, -16, 0, 0)
+        opts.ScrollBarThickness = 6
+        opts.ClipsDescendants = true
+        opts.ZIndex = 1
+        opts.CanvasSize = UDim2.new(0,0,0,0)
+
+        local state = {
+            items = items,
+            current = default or items[1],
+            open = false,
+            row = row,
+            opts = opts,
+            valueText = valueText,
+            chevron = chevron,
+            capH = capH,
+            maxVisible = maxVisible,
+            callback = callback,
+        }
+
+        -- Bind abre/fecha no cabeçalho
+        local function bindToggleClick(guiObj)
+            guiObj.InputBegan:Connect(function(i)
+                if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+                    if state.api then state.api:Open() else end
+                end
+            end)
+        end
+        -- Como queremos toggle (não só open), criamos função que inverte:
+        local function bindToggleInvert(guiObj)
+            guiObj.InputBegan:Connect(function(i)
+                if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+                    if state.api then
+                        if state.api._isOpen and state.api:_isOpen() then state.api:Close() else state.api:Open() end
+                    end
+                end
+            end)
+        end
+
+        -- API
+        state.api = makeDropdownAPI(state)
+
+        -- substitui bind para inverter (abre/fecha)
+        local function bindAll()
+            bindToggleInvert(cap)
+            bindToggleInvert(label)
+            bindToggleInvert(valueText)
+            bindToggleInvert(chevron)
+            bindToggleInvert(ico)
+        end
+        bindAll()
+
+        return state.api
+    end
+
+    local function openThis()
+        for _,c in ipairs(content:GetChildren()) do
+            if c:IsA("ScrollingFrame") then c.Visible = false end
+        end
+        page.Visible = true
+        selectSide(sideBtn)
+        containers.pageTitle.Text = "| " .. (def.name or "Tab")
+    end
+
+    local tab = {}
+    function tab:AddSection(text)  return TAddSection(text) end
+    function tab:AddToggle(opt)    return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
+    function tab:AddButton(opt)    return TAddButton(opt.icon, opt.text, opt.callback) end
+    function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
+
+    sideBtn.MouseButton1Click:Connect(openThis)
+    if not sidebar:FindFirstChild("_firstTabSelected") then
+        local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
+        openThis()
+    end
+
+    return setmetatable(tab, {__index = tab})
 end
 
 -- ===== Janela principal =====
@@ -588,12 +986,11 @@ function Lib:_spawnWindow(opts)
         Instance.new("UITextSizeConstraint", b).MaxTextSize = 16
         return b
     end
-    -- Ordem: X | - | ⚙
     local btnCls = mkHeadBtn("X"); btnCls.Parent = header; btnCls.Size = UDim2.fromOffset(32,26); btnCls.Position = UDim2.new(1,-38,0.5,-13)
     local btnMin = mkHeadBtn("-"); btnMin.Parent = header; btnMin.Size = UDim2.fromOffset(32,26); btnMin.Position = UDim2.new(1,-74,0.5,-13)
     local btnCfg = mkHeadBtn("⚙"); btnCfg.Parent = header; btnCfg.Size = UDim2.fromOffset(32,26); btnCfg.Position = UDim2.new(1,-110,0.5,-13)
 
-    -- Body (Sidebar + Content)
+    -- Body
     local body = Instance.new("Frame", win)
     body.BackgroundTransparency = 1
     body.Position = UDim2.new(0, 6, 0, 60)
@@ -630,329 +1027,8 @@ function Lib:_spawnWindow(opts)
     pageTitle.Size = UDim2.new(1, -20, 0, 28)
     Instance.new("UITextSizeConstraint", pageTitle).MaxTextSize = 20
 
-    local function makeSideItem(iconId, text)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 38)
-        btn.BackgroundColor3 = DEFAULT_THEME.card
-        btn.AutoButtonColor = false
-        btn.Text = ""
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-
-        local ic = Instance.new("ImageLabel", btn)
-        ic.BackgroundTransparency = 1
-        ic.Image = iconId or "rbxassetid://14862323455"
-        ic.Size = UDim2.fromOffset(DEFAULT_THEME.sideIconSize, DEFAULT_THEME.sideIconSize)
-        ic.Position = UDim2.new(0, 8, 0.5, -DEFAULT_THEME.sideIconSize/2)
-        ic.ImageColor3 = Color3.fromRGB(230,230,235)
-
-        local lb = Instance.new("TextLabel", btn)
-        lb.BackgroundTransparency = 1
-        lb.Text = text
-        lb.Font = Enum.Font.GothamSemibold
-        lb.TextXAlignment = Enum.TextXAlignment.Left
-        lb.TextColor3 = DEFAULT_THEME.text
-        lb.TextScaled = true
-        lb.Position = UDim2.new(0, 8 + DEFAULT_THEME.sideIconSize + 8, 0, 4)
-        lb.Size = UDim2.new(1, -(8 + DEFAULT_THEME.sideIconSize + 8 + 8), 1, -8)
-        Instance.new("UITextSizeConstraint", lb).MaxTextSize = 16
-        return btn
-    end
-    local function selectSide(sideBtn)
-        for _,c in ipairs(sidebar:GetChildren()) do
-            if c:IsA("TextButton") then Tween:Create(c, TweenInfo.new(0.15), {BackgroundColor3 = DEFAULT_THEME.card}):Play() end
-        end
-        Tween:Create(sideBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50,52,62)}):Play()
-    end
-    local function MakeTab(def)
-        local sideBtn = makeSideItem(def.icon, def.name or "Tab"); sideBtn.Parent = sidebar
-        local page = Instance.new("ScrollingFrame", content)
-        page.BackgroundTransparency = 1
-        page.Position = UDim2.new(0, 8, 0, 44)
-        page.Size = UDim2.new(1, -16, 1, -54)
-        page.ScrollBarThickness = 6
-        page.Visible = false
-        local pageList = Instance.new("UIListLayout", page)
-        pageList.Padding = UDim.new(0,8)
-        pageList.SortOrder = Enum.SortOrder.LayoutOrder
-        pageList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            page.CanvasSize = UDim2.new(0,0,0,pageList.AbsoluteContentSize.Y + 8)
-        end)
-
-        local function TAddSection(text)
-            local s = Instance.new("TextLabel", page)
-            s.BackgroundTransparency = 1
-            s.Text = text
-            s.Font = Enum.Font.GothamBold
-            s.TextXAlignment = Enum.TextXAlignment.Left
-            s.TextColor3 = DEFAULT_THEME.text
-            s.TextScaled = true
-            s.Size = UDim2.new(1,0,0,24)
-            Instance.new("UITextSizeConstraint", s).MaxTextSize = 16
-            return s
-        end
-        local function TAddToggle(iconId, labelText, default, callback)
-            local row = Instance.new("Frame", page)
-            row.Size = UDim2.new(1, 0, 0, DEFAULT_THEME.rowHeight)
-            row.BackgroundColor3 = DEFAULT_THEME.row
-            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
-
-            local ico = Instance.new("ImageLabel", row)
-            ico.BackgroundTransparency = 1
-            ico.Image = iconId or "rbxassetid://14862323455"
-            ico.Size = UDim2.fromOffset(18,18)
-            ico.Position = UDim2.new(0, 12, 0.5, -9)
-            ico.ImageColor3 = Color3.fromRGB(235,235,240)
-
-            local label = Instance.new("TextLabel", row)
-            label.BackgroundTransparency = 1
-            label.Text = string.upper(labelText or "TOGGLE")
-            label.Font = Enum.Font.GothamSemibold
-            label.TextColor3 = DEFAULT_THEME.text
-            label.TextXAlignment = Enum.TextXAlignment.Left
-            label.TextScaled = true
-            label.Position = UDim2.new(0, 36, 0, 2)
-            label.Size = UDim2.new(1, - (DEFAULT_THEME.toggleSize.X + 70), 1, -4)
-            Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
-
-            local btn = Instance.new("TextButton", row)
-            btn.Text = ""
-            btn.AutoButtonColor = false
-            btn.Size = UDim2.fromOffset(DEFAULT_THEME.toggleSize.X, DEFAULT_THEME.toggleSize.Y)
-            btn.Position = UDim2.new(1, -(DEFAULT_THEME.toggleSize.X + 12), 0.5, -math.floor(DEFAULT_THEME.toggleSize.Y/2))
-            btn.BackgroundColor3 = DEFAULT_THEME.toggle_off
-            btn.ClipsDescendants = true
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
-
-            local knob = Instance.new("Frame", btn)
-            knob.Size = UDim2.fromOffset(DEFAULT_THEME.knobSize.X, DEFAULT_THEME.knobSize.Y)
-            knob.Position = UDim2.new(0, 2, 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2))
-            knob.BackgroundColor3 = DEFAULT_THEME.knob_off
-            Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-            local kS = Instance.new("UIStroke", knob); kS.Transparency = 0.7
-
-            local offX, onX = 2, math.max(2, DEFAULT_THEME.toggleSize.X - DEFAULT_THEME.knobSize.X - 2)
-
-            local value = default and true or false
-            local function paint(v)
-                if v then
-                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = DEFAULT_THEME.toggle_on}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, onX, 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2)), BackgroundColor3 = Color3.fromRGB(22,24,32)}):Play()
-                else
-                    Tween:Create(btn,  TweenInfo.new(0.14), {BackgroundColor3 = DEFAULT_THEME.toggle_off}):Play()
-                    Tween:Create(knob, TweenInfo.new(0.14), {Position = UDim2.new(0, offX, 0.5, -math.floor(DEFAULT_THEME.knobSize.Y/2)), BackgroundColor3 = DEFAULT_THEME.knob_off}):Play()
-                end
-            end
-            paint(value)
-
-            btn.MouseButton1Click:Connect(function()
-                value = not value
-                paint(value)
-                if callback then task.spawn(function() pcall(callback, value) end) end
-            end)
-
-            return { Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
-                     Get=function() return value end }
-        end
-        local function TAddButton(iconId, text, callback)
-            local row = Instance.new("TextButton", page)
-            row.Text = ""
-            row.Size = UDim2.new(1, 0, 0, 44)
-            row.BackgroundColor3 = DEFAULT_THEME.card
-            row.AutoButtonColor = true
-            Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
-
-            local ico = Instance.new("ImageLabel", row)
-            ico.BackgroundTransparency = 1
-            ico.Image = iconId or "rbxassetid://14862323455"
-            ico.Size = UDim2.fromOffset(18,18)
-            ico.Position = UDim2.new(0, 12, 0.5, -9)
-            ico.ImageColor3 = Color3.fromRGB(235,235,240)
-
-            local lbl = Instance.new("TextLabel", row)
-            lbl.BackgroundTransparency = 1
-            lbl.Text = text or "BUTTON"
-            lbl.Font = Enum.Font.GothamBold
-            lbl.TextColor3 = DEFAULT_THEME.text
-            lbl.TextXAlignment = Enum.TextXAlignment.Left
-            lbl.TextScaled = true
-            lbl.Position = UDim2.new(0, 36, 0, 0)
-            lbl.Size = UDim2.new(1, -36, 1, 0)
-            Instance.new("UITextSizeConstraint", lbl).MaxTextSize = 16
-
-            row.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
-        end
-        local function TAddDropdown(iconId, labelText, items, default, callback)
-            items = items or {}
-            local capH = DEFAULT_THEME.rowHeight
-            local maxVisible = 8
-
-            local row = Instance.new("Frame", page)
-            row.Size = UDim2.new(1, 0, 0, capH)
-            row.BackgroundColor3 = DEFAULT_THEME.row
-            row.ClipsDescendants = true
-            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
-
-            local cap = Instance.new("Frame", row)
-            cap.BackgroundTransparency = 1
-            cap.Size = UDim2.new(1, 0, 0, capH)
-            cap.ZIndex = 2
-
-            local ico = Instance.new("ImageLabel", cap)
-            ico.BackgroundTransparency = 1
-            ico.Image = iconId or "rbxassetid://14862323455"
-            ico.Size = UDim2.fromOffset(18,18)
-            ico.Position = UDim2.new(0, 12, 0.5, -9)
-            ico.ImageColor3 = Color3.fromRGB(235,235,240)
-            ico.ZIndex = 2
-
-            local label = Instance.new("TextLabel", cap)
-            label.BackgroundTransparency = 1
-            label.Text = string.upper(labelText or "DROPDOWN")
-            label.Font = Enum.Font.GothamSemibold
-            label.TextColor3 = DEFAULT_THEME.text
-            label.TextXAlignment = Enum.TextXAlignment.Left
-            label.TextScaled = true
-            label.Position = UDim2.new(0, 36, 0, 2)
-            label.Size = UDim2.new(1, -180, 1, -4)
-            Instance.new("UITextSizeConstraint", label).MaxTextSize = 16
-            label.ZIndex = 2
-
-            local valueText = Instance.new("TextLabel", cap)
-            valueText.BackgroundTransparency = 1
-            valueText.Text = tostring(default or (items[1] or ""))
-            valueText.Font = Enum.Font.Gotham
-            valueText.TextColor3 = DEFAULT_THEME.text
-            valueText.TextXAlignment = Enum.TextXAlignment.Right
-            valueText.TextScaled = true
-            valueText.Position = UDim2.new(0, 0, 0, 6)
-            valueText.Size = UDim2.new(1, -56, 1, -12)
-            Instance.new("UITextSizeConstraint", valueText).MaxTextSize = 14
-            valueText.ZIndex = 2
-
-            local chevron = Instance.new("TextLabel", cap)
-            chevron.BackgroundTransparency = 1
-            chevron.Text = "▼"
-            chevron.Font = Enum.Font.GothamBold
-            chevron.TextColor3 = DEFAULT_THEME.text
-            chevron.TextScaled = true
-            chevron.Position = UDim2.new(1, -40, 0, 8)
-            chevron.Size = UDim2.fromOffset(28, 28)
-            Instance.new("UITextSizeConstraint", chevron).MaxTextSize = 16
-            chevron.ZIndex = 2
-
-            local opts = Instance.new("ScrollingFrame", row)
-            opts.BackgroundTransparency = 1
-            opts.Position = UDim2.new(0, 8, 0, capH)
-            opts.Size = UDim2.new(1, -16, 0, 0)
-            opts.ScrollBarThickness = 6
-            opts.ClipsDescendants = true
-            opts.ZIndex = 1
-            opts.CanvasSize = UDim2.new(0,0,0,0)
-
-            local optsList = Instance.new("UIListLayout", opts)
-            optsList.Padding = UDim.new(0, 6)
-            optsList.SortOrder = Enum.SortOrder.LayoutOrder
-            optsList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y)
-            end)
-
-            local function makeOption(txt)
-                local b = Instance.new("TextButton")
-                b.Text = ""
-                b.AutoButtonColor = true
-                b.Size = UDim2.new(1, 0, 0, 32)
-                b.BackgroundColor3 = DEFAULT_THEME.card
-                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
-                local l = Instance.new("TextLabel", b)
-                l.BackgroundTransparency = 1
-                l.Text = tostring(txt)
-                l.Font = Enum.Font.Gotham
-                l.TextColor3 = DEFAULT_THEME.text
-                l.TextXAlignment = Enum.TextXAlignment.Left
-                l.TextScaled = true
-                l.Position = UDim2.new(0, 10, 0, 2)
-                l.Size = UDim2.new(1, -20, 1, -4)
-                Instance.new("UITextSizeConstraint", l).MaxTextSize = 14
-                return b
-            end
-
-            local function heightForList()
-                local count = #items
-                if count == 0 then return 0 end
-                local fullH = (count * 32) + ((count-1) * 6) + 8
-                local maxH  = (maxVisible * 32) + ((maxVisible-1) * 6) + 8
-                return math.min(fullH, maxH)
-            end
-
-            local open = false
-            local function toggle(want)
-                local wantOpen = (want==nil) and (not open) or want
-                open = wantOpen
-                chevron.Text = open and "▲" or "▼"
-                local listH = open and heightForList() or 0
-                Tween:Create(row,  TweenInfo.new(0.16), {Size = UDim2.new(1, 0, 0, capH + listH)}):Play()
-                Tween:Create(opts, TweenInfo.new(0.16), {Size = UDim2.new(1, -16, 0, listH)}):Play()
-            end
-
-            local function populate(list)
-                for _,c in ipairs(opts:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
-                for _,name in ipairs(list) do
-                    local b = makeOption(name); b.Parent = opts
-                    b.MouseButton1Click:Connect(function()
-                        valueText.Text = tostring(name)
-                        toggle(false)
-                        if callback then task.spawn(function() pcall(callback, name) end) end
-                    end)
-                end
-                task.defer(function() opts.CanvasSize = UDim2.new(0,0,0, optsList.AbsoluteContentSize.Y) end)
-            end
-            populate(items)
-
-            local function bindToggleClick(guiObj)
-                guiObj.InputBegan:Connect(function(i)
-                    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then toggle() end
-                end)
-            end
-            bindToggleClick(cap); bindToggleClick(label); bindToggleClick(valueText); bindToggleClick(chevron); bindToggleClick(ico)
-
-            local current = default or items[1]
-            if current then valueText.Text = tostring(current) end
-
-            return {
-                Set=function(v) current=v; valueText.Text=tostring(v); if callback then pcall(callback,v) end end,
-                Get=function() return current end,
-                SetItems=function(newItems, newDefault)
-                    items = newItems or {}; populate(items)
-                    current = newDefault or items[1]; valueText.Text = tostring(current or ""); toggle(false)
-                end,
-                Open=function() toggle(true) end,
-                Close=function() toggle(false) end
-            }
-        end
-
-        local function openThis()
-            for _,c in ipairs(content:GetChildren()) do
-                if c:IsA("ScrollingFrame") then c.Visible = false end
-            end
-            page.Visible = true
-            selectSide(sideBtn)
-            pageTitle.Text = "| " .. (def.name or "Tab")
-        end
-
-        local tab = {}
-        function tab:AddSection(text)  return TAddSection(text) end
-        function tab:AddToggle(opt)    return TAddToggle(opt.icon, opt.text, opt.default, opt.callback) end
-        function tab:AddButton(opt)    return TAddButton(opt.icon, opt.text, opt.callback) end
-        function tab:AddDropdown(opt)  return TAddDropdown(opt.icon, opt.text, opt.items, opt.default, opt.callback) end
-
-        sideBtn.MouseButton1Click:Connect(openThis)
-        if not sidebar:FindFirstChild("_firstTabSelected") then
-            local flag = Instance.new("BoolValue"); flag.Name = "_firstTabSelected"; flag.Parent = sidebar
-            openThis()
-        end
-
-        return setmetatable(tab, {__index = tab})
-    end
+    local containers = { sidebar = sidebar, content = content, pageTitle = pageTitle }
+    local function MakeTab(def) return makeTabAPI(def, containers, theme) end
 
     -- posição
     win.Position = UDim2.new(0.5, -theme.winSize.X.Offset/2, 0.5, -theme.winSize.Y.Offset/2)
