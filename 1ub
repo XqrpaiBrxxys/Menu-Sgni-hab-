@@ -39,7 +39,7 @@ Lib._minKey = Enum.KeyCode[defaultKeyName] or Enum.KeyCode.M
 -- Discord invite
 Lib._discordLink = (_G.SyniX_Settings and _G.SyniX_Settings.discordLink)
                 or _G.SyniX_DiscordInvite
-                or "https://discord.gg/yourinvite"
+                or "https://discord.gg/BvQ8F4ux7h"
 
 -- ===== Tema =====
 local DEFAULT_THEME = {
@@ -167,7 +167,7 @@ local function ensureLauncher()
     local launcher = Instance.new("ImageButton")
     launcher.Name = "Launcher"
     launcher.Image = "rbxassetid://14862323455"
-    launcher.Size = UDim2.fromOffset(56,56)
+    launcher.Size = UDim2.fromOffset(54,54)
     launcher.Position = _G.SyniXLauncherPos or UDim2.new(0, 14, 1, -72)
     launcher.BackgroundColor3 = Color3.fromRGB(26,28,36)
     launcher.BorderSizePixel = 0
@@ -355,7 +355,7 @@ local function buildSettingsUI(anchorWin)
 
     local lbBall = Instance.new("TextLabel", rowBall)
     lbBall.BackgroundTransparency = 1
-    lbBall.Text = "MOSTRAR LAUNCHER (BOLINHA)"
+    lbBall.Text = "SHOW ICON"
     lbBall.Font = Enum.Font.GothamSemibold
     lbBall.TextScaled = true
     lbBall.TextXAlignment = Enum.TextXAlignment.Left
@@ -401,7 +401,7 @@ local function buildSettingsUI(anchorWin)
 
     local ic = Instance.new("ImageLabel", rowDisc)
     ic.BackgroundTransparency = 1
-    ic.Image = "rbxassetid://14862323455"
+    ic.Image = "rbxassetid://"
     ic.Size = UDim2.fromOffset(18,18)
     ic.Position = UDim2.new(0, 10, 0.5, -9)
     ic.ImageColor3 = Color3.fromRGB(235,235,240)
