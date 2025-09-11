@@ -409,7 +409,7 @@ local function buildSettingsUI(anchorWin)
 
     local lbDisc = Instance.new("TextLabel", rowDisc)
     lbDisc.BackgroundTransparency = 1
-    lbDisc.Text = "Link do Discord"
+    lbDisc.Text = "Discord"
     lbDisc.Font = Enum.Font.GothamBold
     lbDisc.TextScaled = true
     lbDisc.TextXAlignment = Enum.TextXAlignment.Left
