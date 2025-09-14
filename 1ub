@@ -390,43 +390,38 @@ local function buildSettingsUI(anchorWin)
         }):Play()
     end
 
- -- Row: Link do Discord (centralizado e maior)
+ -- Row: Discord (simples e centralizado)
 local rowDisc = Instance.new("TextButton", body)
 rowDisc.Text = ""
 rowDisc.AutoButtonColor = true
-rowDisc.Size = UDim2.new(1,0,0,44)                 -- ↑ mais alto
+rowDisc.Size = UDim2.new(1,0,0,44)                 -- altura maior
 rowDisc.BackgroundColor3 = Color3.fromRGB(24,25,34)
 rowDisc.ZIndex = 11
 Instance.new("UICorner", rowDisc).CornerRadius = UDim.new(0,8)
 
--- padding simétrico: deixa espaço pro ícone e equilibra à direita
-local pad = Instance.new("UIPadding", rowDisc)
-pad.PaddingLeft  = UDim.new(0, 44)                 -- 18px ícone + 10~12 de margem + folga
-pad.PaddingRight = UDim.new(0, 44)
-
+-- Ícone (se quiser manter à esquerda, senão pode remover)
 local ic = Instance.new("ImageLabel", rowDisc)
 ic.BackgroundTransparency = 1
 ic.Image = "rbxassetid://113753999699167"
-ic.Size = UDim2.fromOffset(20,20)                  -- ícone um pouco maior
+ic.Size = UDim2.fromOffset(20,20)
 ic.Position = UDim2.new(0, 12, 0.5, -10)
 ic.ImageColor3 = Color3.fromRGB(235,235,240)
 ic.ZIndex = 12
 
+-- Label centralizado
 local lbDisc = Instance.new("TextLabel", rowDisc)
 lbDisc.BackgroundTransparency = 1
 lbDisc.Text = "Discord"
 lbDisc.Font = Enum.Font.GothamBold
-lbDisc.TextScaled = true
-lbDisc.TextXAlignment = Enum.TextXAlignment.Center  -- CENTRALIZA
-lbDisc.TextYAlignment = Enum.TextYAlignment.Center
 lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
-lbDisc.Position = UDim2.fromScale(0, 0)
-lbDisc.Size = UDim2.fromScale(1, 1)                -- ocupa todo o espaço útil (com padding)
+lbDisc.TextXAlignment = Enum.TextXAlignment.Center
+lbDisc.TextYAlignment = Enum.TextYAlignment.Center
+lbDisc.Size = UDim2.fromScale(1, 1)
 lbDisc.ZIndex = 12
-lbDisc.TextWrapped = false
-lbDisc.TextTruncate = Enum.TextTruncate.None
-local max = Instance.new("UITextSizeConstraint", lbDisc)
-max.MaxTextSize = 18                                -- maior e legível
+
+-- Força tamanho fixo em vez de TextScaled
+lbDisc.TextScaled = false
+lbDisc.TextSize = 18                              -- tamanho fixo maior
 
     -- Toast
     local toast = Instance.new("TextLabel", panel)
