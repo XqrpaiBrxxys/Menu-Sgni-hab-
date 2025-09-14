@@ -390,34 +390,41 @@ local function buildSettingsUI(anchorWin)
         }):Play()
     end
 
-    -- Row: Link do Discord
-    local rowDisc = Instance.new("TextButton", body)
-    rowDisc.Text = ""
-    rowDisc.AutoButtonColor = true
-    rowDisc.Size = UDim2.new(1,0,0,38)
-    rowDisc.BackgroundColor3 = Color3.fromRGB(24,25,34)
-    rowDisc.ZIndex = 11
-    Instance.new("UICorner", rowDisc).CornerRadius = UDim.new(0,8)
+   -- Row: Link do Discord (com padding pra não cortar o texto)
+local rowDisc = Instance.new("TextButton", body)
+rowDisc.Text = ""
+rowDisc.AutoButtonColor = true
+rowDisc.Size = UDim2.new(1,0,0,38)
+rowDisc.BackgroundColor3 = Color3.fromRGB(24,25,34)
+rowDisc.ZIndex = 11
+Instance.new("UICorner", rowDisc).CornerRadius = UDim.new(0,8)
 
-    local ic = Instance.new("ImageLabel", rowDisc)
-    ic.BackgroundTransparency = 1
-    ic.Image = "rbxassetid://113753999699167"
-    ic.Size = UDim2.fromOffset(18,18)
-    ic.Position = UDim2.new(0, 10, 0.5, -9)
-    ic.ImageColor3 = Color3.fromRGB(235,235,240)
-    ic.ZIndex = 12
+-- padding interno: 36px à esquerda (ícone) e 10px à direita (respiro)
+local pad = Instance.new("UIPadding", rowDisc)
+pad.PaddingLeft  = UDim.new(0, 36)
+pad.PaddingRight = UDim.new(0, 10)
 
-    local lbDisc = Instance.new("TextLabel", rowDisc)
-    lbDisc.BackgroundTransparency = 1
-    lbDisc.Text = "Discord"
-    lbDisc.Font = Enum.Font.GothamBold
-    lbDisc.TextScaled = true
-    lbDisc.TextXAlignment = Enum.TextXAlignment.Left
-    lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
-    lbDisc.Position = UDim2.new(0, 36, 0, 0)
-    lbDisc.Size = UDim2.new(1, -36, 1, 0)
-    lbDisc.ZIndex = 12
-    Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
+local ic = Instance.new("ImageLabel", rowDisc)
+ic.BackgroundTransparency = 1
+ic.Image = "rbxassetid://113753999699167"
+ic.Size = UDim2.fromOffset(18,18)
+ic.Position = UDim2.new(0, 10, 0.5, -9)
+ic.ImageColor3 = Color3.fromRGB(235,235,240)
+ic.ZIndex = 12
+
+local lbDisc = Instance.new("TextLabel", rowDisc)
+lbDisc.BackgroundTransparency = 1
+lbDisc.Text = "Link do Discord" -- ou "Discord", como preferir
+lbDisc.Font = Enum.Font.GothamBold
+lbDisc.TextScaled = true
+lbDisc.TextXAlignment = Enum.TextXAlignment.Left
+lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
+lbDisc.Position = UDim2.fromOffset(0, 0)
+lbDisc.Size = UDim2.fromScale(1, 1)    -- ocupa todo o espaço útil (já com padding)
+lbDisc.ZIndex = 12
+lbDisc.TextWrapped = false
+lbDisc.TextTruncate = Enum.TextTruncate.None
+Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
 
     -- Toast
     local toast = Instance.new("TextLabel", panel)
