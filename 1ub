@@ -401,7 +401,7 @@ local function buildSettingsUI(anchorWin)
 
     local ic = Instance.new("ImageLabel", rowDisc)
     ic.BackgroundTransparency = 1
-    ic.Image = "rbxassetid://113753999699167"
+    ic.Image = "rbxassetid://131654640309321"
     ic.Size = UDim2.fromOffset(18,18)
     ic.Position = UDim2.new(0, 10, 0.5, -9)
     ic.ImageColor3 = Color3.fromRGB(235,235,240)
