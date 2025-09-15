@@ -407,25 +407,17 @@ local function buildSettingsUI(anchorWin)
     ic.ImageColor3 = Color3.fromRGB(235,235,240)
     ic.ZIndex = 12
 
-local lbDisc = Instance.new("TextLabel", rowDisc)
-lbDisc.BackgroundTransparency = 1
-lbDisc.Text = "Discord"
-lbDisc.Font = Enum.Font.GothamBold
-lbDisc.TextScaled = true
-lbDisc.TextXAlignment = Enum.TextXAlignment.Left
-lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
-
--- centralizado no meio da linha
-lbDisc.AnchorPoint = Vector2.new(0, 0.5) 
-lbDisc.Position = UDim2.new(0, 36, 0.5, 0) -- meio do Y
-lbDisc.Size = UDim2.new(1, -36, 0, 20) -- altura fixa (20px)
-
-lbDisc.ZIndex = 20
-Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
-
--- Força tamanho fixo em vez de TextScaled
-lbDisc.TextScaled = false
-lbDisc.TextSize = 18                              -- tamanho fixo maior
+  local lbDisc = Instance.new("TextLabel", rowDisc)
+    lbDisc.BackgroundTransparency = 1
+    lbDisc.Text = "Link do Discord"
+    lbDisc.Font = Enum.Font.GothamBold
+    lbDisc.TextScaled = true
+    lbDisc.TextXAlignment = Enum.TextXAlignment.Left
+    lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
+    lbDisc.Position = UDim2.new(0, 36, 0, 0)
+    lbDisc.Size = UDim2.new(1, -36, 1, 0)
+    lbDisc.ZIndex = 20
+    Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
 
     -- Toast
     local toast = Instance.new("TextLabel", panel)
