@@ -390,34 +390,34 @@ local function buildSettingsUI(anchorWin)
         }):Play()
     end
 
- -- Row: Discord (simples e centralizado)
-local rowDisc = Instance.new("TextButton", body)
-rowDisc.Text = ""
-rowDisc.AutoButtonColor = true
-rowDisc.Size = UDim2.new(1,0,0,44)                 -- altura maior
-rowDisc.BackgroundColor3 = Color3.fromRGB(24,25,34)
-rowDisc.ZIndex = 11
-Instance.new("UICorner", rowDisc).CornerRadius = UDim.new(0,8)
+  -- Row: Link do Discord
+    local rowDisc = Instance.new("TextButton", body)
+    rowDisc.Text = ""
+    rowDisc.AutoButtonColor = true
+    rowDisc.Size = UDim2.new(1,0,0,38)
+    rowDisc.BackgroundColor3 = Color3.fromRGB(24,25,34)
+    rowDisc.ZIndex = 11
+    Instance.new("UICorner", rowDisc).CornerRadius = UDim.new(0,8)
 
--- Ícone (se quiser manter à esquerda, senão pode remover)
-local ic = Instance.new("ImageLabel", rowDisc)
-ic.BackgroundTransparency = 1
-ic.Image = "rbxassetid://113753999699167"
-ic.Size = UDim2.fromOffset(20,20)
-ic.Position = UDim2.new(0, 12, 0.5, -10)
-ic.ImageColor3 = Color3.fromRGB(235,235,240)
-ic.ZIndex = 12
+    local ic = Instance.new("ImageLabel", rowDisc)
+    ic.BackgroundTransparency = 1
+    ic.Image = "rbxassetid://113753999699167"
+    ic.Size = UDim2.fromOffset(18,18)
+    ic.Position = UDim2.new(0, 10, 0.5, -9)
+    ic.ImageColor3 = Color3.fromRGB(235,235,240)
+    ic.ZIndex = 12
 
--- Label centralizado
-local lbDisc = Instance.new("TextLabel", rowDisc)
-lbDisc.BackgroundTransparency = 1
-lbDisc.Text = "Discord"
-lbDisc.Font = Enum.Font.GothamBold
-lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
-lbDisc.TextXAlignment = Enum.TextXAlignment.Center
-lbDisc.TextYAlignment = Enum.TextYAlignment.Center
-lbDisc.Size = UDim2.fromScale(1, 1)
-lbDisc.ZIndex = 12
+    local lbDisc = Instance.new("TextLabel", rowDisc)
+    lbDisc.BackgroundTransparency = 1
+    lbDisc.Text = "Discord"
+    lbDisc.Font = Enum.Font.GothamBold
+    lbDisc.TextScaled = true
+    lbDisc.TextXAlignment = Enum.TextXAlignment.Left
+    lbDisc.TextColor3 = Color3.fromRGB(238,240,248)
+    lbDisc.Position = UDim2.new(0, 36, 0, 0)
+    lbDisc.Size = UDim2.new(1, -36, 1, 0)
+    lbDisc.ZIndex = 20
+    Instance.new("UITextSizeConstraint", lbDisc).MaxTextSize = 16
 
 -- Força tamanho fixo em vez de TextScaled
 lbDisc.TextScaled = false
