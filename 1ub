@@ -1,16 +1,21 @@
--- SyniXLib.lua v0.4.10
+-- SyniXLib.lua v0.4.11
 -- - Dropdown com UIListLayout (itens empilhados) + :Refresh(list, keepOpen, newDefault)
 -- - Config sem escudo; header só com "-"
 -- - Botão "Link do Discord": setclipboard + toast "Discord link copied!"
 -- - Hotkey global para minimizar configurável
 -- - FIX: FindFirstChild("_firstTabSelected")
--- - FIX: AutoLocalize desativado (forceEnglish) para impedir traduções automáticas
+-- - NOVO: Aba "Network" com botão "SERVER HOP" (ultra-rápido)
+--         -> busca 1 página Asc/Desc em paralelo com excludeFullGames, fallback Teleport(placeId)
+--         -> deep scan curto (3 páginas) opcional
+--         -> tudo sem prints (silencioso), com pcalls para evitar erro
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
-local Players = game:GetService("Players")
-local UIS     = game:GetService("UserInputService")
-local Tween   = game:GetService("TweenService")
+local Players         = game:GetService("Players")
+local UIS             = game:GetService("UserInputService")
+local Tween           = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService     = game:GetService("HttpService")
 
 local Lib = {}
 Lib.__index = Lib
@@ -70,19 +75,6 @@ local function merge(a,b)
     for k,v in pairs(a or {}) do t[k]=v end
     for k,v in pairs(b or {}) do t[k]=v end
     return t
-end
-
--- Desliga autotradução em toda a árvore GUI passada
-local function forceEnglish(root)
-    if not root or not root.Destroy then return end
-    pcall(function() if root:IsA("GuiBase2d") then root.AutoLocalize = false end end)
-    for _, d in ipairs(root:GetDescendants()) do
-        pcall(function()
-            if d:IsA("GuiBase2d") then
-                d.AutoLocalize = false
-            end
-        end)
-    end
 end
 
 local function enableDrag(frame, clampToScreen)
@@ -155,6 +147,179 @@ local function saveSettings()
     _G.SyniX_Settings.discordLink = Lib._discordLink
 end
 
+-- ======================================================================================
+-- ====== SERVER HOP (INTEGRADO NA LIB) ================================================
+-- ======================================================================================
+
+-- Config interna do hop
+local _HOP = {
+    PAGE_LIMIT       = 100,   -- 10/25/50/100
+    RETRIES_HTTP     = 2,
+    RETRIES_TP       = 2,
+    DEEP_SCAN_PAGES  = 3,
+    USE_DEEP_SCAN    = true,
+    MIN_PLAYING_PREF = 2,
+}
+local function _backoff(n) return math.min(2 ^ n, 4) end
+
+-- helpers privados
+function Lib:_hopGetOneEligible(placeId, order, currentJobId)
+    local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=%s&limit=%d&excludeFullGames=true")
+        :format(placeId, order, _HOP.PAGE_LIMIT)
+
+    local body
+    for try=1,_HOP.RETRIES_HTTP do
+        local ok,res = pcall(function() return HttpService:GetAsync(url, true) end)
+        if ok and res then body = res; break end
+        task.wait(_backoff(try))
+    end
+    if not body then return nil, nil end
+
+    local ok, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+    if not ok or type(decoded)~="table" or type(decoded.data)~="table" then
+        return nil, nil
+    end
+
+    -- Preferir servers com um pouco de gente (evita vazio)
+    for _, s in ipairs(decoded.data) do
+        local id, playing, maxp = s.id, tonumber(s.playing) or 0, tonumber(s.maxPlayers) or 0
+        if id and id~=currentJobId and maxp>0 and playing<maxp and playing>=_HOP.MIN_PLAYING_PREF then
+            return id, decoded.nextPageCursor
+        end
+    end
+    -- Se não achou, qualquer elegível
+    for _, s in ipairs(decoded.data) do
+        local id, playing, maxp = s.id, tonumber(s.playing) or 0, tonumber(s.maxPlayers) or 0
+        if id and id~=currentJobId and maxp>0 and playing<maxp then
+            return id, decoded.nextPageCursor
+        end
+    end
+    return nil, decoded.nextPageCursor
+end
+
+function Lib:_hopDeepScan(placeId, order, currentJobId, maxPages, startCursor)
+    local cursor = startCursor
+    for _=1, maxPages do
+        local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=%s&limit=%d&excludeFullGames=true")
+            :format(placeId, order, _HOP.PAGE_LIMIT)
+        if cursor then url = url .. "&cursor=" .. HttpService:UrlEncode(cursor) end
+
+        local body
+        for try=1,_HOP.RETRIES_HTTP do
+            local ok,res = pcall(function() return HttpService:GetAsync(url, true) end)
+            if ok and res then body = res; break end
+            task.wait(_backoff(try))
+        end
+        if not body then return nil end
+
+        local ok, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok or type(decoded)~="table" or type(decoded.data)~="table" then
+            return nil
+        end
+
+        for pass=1,2 do
+            local prefer = (pass==1)
+            for _,s in ipairs(decoded.data) do
+                local id, playing, maxp = s.id, tonumber(s.playing) or 0, tonumber(s.maxPlayers) or 0
+                local good = id and id~=currentJobId and maxp>0 and playing<maxp
+                if good and ((prefer and playing>=_HOP.MIN_PLAYING_PREF) or (not prefer)) then
+                    return id
+                end
+            end
+        end
+
+        if decoded.nextPageCursor and decoded.nextPageCursor ~= cursor then
+            cursor = decoded.nextPageCursor
+        else
+            break
+        end
+    end
+    return nil
+end
+
+function Lib:_hopTeleport(placeId, serverId, localPlayer)
+    if not localPlayer then return end
+    local tries = 0
+
+    pcall(function()
+        TeleportService:QueueOnTeleport([[print("《SyniX HUB》 Server hop...")]])
+    end)
+
+    local function tryOnce()
+        tries += 1
+        local ok = pcall(function()
+            if serverId and #serverId>0 then
+                TeleportService:TeleportToPlaceInstance(placeId, serverId, localPlayer)
+            else
+                TeleportService:Teleport(placeId, localPlayer)
+            end
+        end)
+        if not ok and tries < _HOP.RETRIES_TP then
+            task.wait(_backoff(tries))
+            tryOnce()
+        elseif not ok and serverId and #serverId>0 then
+            pcall(function() TeleportService:Teleport(placeId, localPlayer) end)
+        end
+    end
+
+    local conn
+    conn = TeleportService.TeleportInitFailed:Connect(function(player, result, msg)
+        if player ~= localPlayer then return end
+        if tries < _HOP.RETRIES_TP then
+            task.wait(_backoff(tries+1))
+            tryOnce()
+        else
+            pcall(function() TeleportService:Teleport(placeId, localPlayer) end)
+            if conn then conn:Disconnect() end
+        end
+    end)
+
+    tryOnce()
+end
+
+function Lib:_goToRandomPublicServerFast()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+    local localPlayer = Players.LocalPlayer
+    if not localPlayer then return end
+
+    local PLACE_ID    = game.PlaceId
+    local CURRENT_JOB = game.JobId
+
+    local foundId, done = nil, false
+    local nextCursors = { Asc = nil, Desc = nil }
+
+    local function runner(order)
+        if done then return end
+        local id, cursor = self:_hopGetOneEligible(PLACE_ID, order, CURRENT_JOB)
+        nextCursors[order] = cursor
+        if id and not done then
+            done = true
+            foundId = id
+            self:_hopTeleport(PLACE_ID, foundId, localPlayer)
+        end
+    end
+
+    task.spawn(runner, "Asc")
+    task.spawn(runner, "Desc")
+
+    task.wait(0.25)
+
+    if not done then
+        if _HOP.USE_DEEP_SCAN then
+            local id = self:_hopDeepScan(PLACE_ID, "Desc", CURRENT_JOB, _HOP.DEEP_SCAN_PAGES, nextCursors.Desc)
+            if not id then id = self:_hopDeepScan(PLACE_ID, "Asc", CURRENT_JOB, _HOP.DEEP_SCAN_PAGES, nextCursors.Asc) end
+            if id then
+                self:_hopTeleport(PLACE_ID, id, localPlayer)
+                return
+            end
+        end
+        -- Fallback: instância qualquer do place (rápido)
+        self:_hopTeleport(PLACE_ID, nil, localPlayer)
+    end
+end
+
+-- ======================================================================================
+
 -- ===== Launcher =====
 local function ensureLauncher()
     if not Lib._launcherEnabled then return end
@@ -176,7 +341,6 @@ local function ensureLauncher()
         gui.DisplayOrder = 1000
         gui.Parent = player:WaitForChild("PlayerGui")
         Lib._launcherGui = gui
-        forceEnglish(gui)
     end
 
     local launcher = Instance.new("ImageButton")
@@ -191,7 +355,6 @@ local function ensureLauncher()
     Instance.new("UICorner", launcher).CornerRadius = UDim.new(1,0)
     local s = Instance.new("UIStroke", launcher); s.Transparency = 0.45; s.Color = Color3.fromRGB(255,255,255)
     launcher.Parent = gui
-    forceEnglish(gui)
 
     enableLauncherDrag(launcher)
 
@@ -460,16 +623,17 @@ local function buildSettingsUI(anchorWin)
     end
 
     -- Eventos Config
-    minCfg.MouseButton1Click:Connect(function()
-        gui.Enabled = false
-        Lib._settingsOpen = false
-    end)
-
-    tBtn.MouseButton1Click:Connect(function()
-        Lib._showLauncher = not Lib._showLauncher
+    local function setShowLauncher(v)
+        Lib._showLauncher = v and true or false
         paintToggle(Lib._showLauncher)
         if Lib._showLauncher then ensureLauncher() else destroyLauncher() end
         saveSettings()
+    end
+
+    tBtn.MouseButton1Click:Connect(function() setShowLauncher(not Lib._showLauncher) end)
+    minCfg.MouseButton1Click:Connect(function()
+        gui.Enabled = false
+        Lib._settingsOpen = false
     end)
 
     keyBtn.MouseButton1Click:Connect(function()
@@ -514,7 +678,6 @@ local function buildSettingsUI(anchorWin)
     end
     task.defer(reposition)
 
-    forceEnglish(gui)
     Lib._settingsGui = gui
     return gui
 end
@@ -680,7 +843,6 @@ local function makeTabAPI(def, containers, theme)
     end
 
     local sideBtn = makeSideItem(def.icon, def.name or "Tab"); sideBtn.Parent = sidebar
-
     local page = Instance.new("ScrollingFrame", content)
     page.BackgroundTransparency = 1
     page.Position = UDim2.new(0, 8, 0, 44)
@@ -767,10 +929,8 @@ local function makeTabAPI(def, containers, theme)
             if callback then task.spawn(function() pcall(callback, value) end) end
         end)
 
-        return {
-            Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
-            Get=function() return value end
-        }
+        return { Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
+                 Get=function() return value end }
     end
 
     local function TAddButton(iconId, text, callback)
@@ -1075,7 +1235,20 @@ function Lib:_spawnWindow(opts)
     Lib._currentWinObj = winObj
     Lib._lastOpts = opts
 
-    forceEnglish(gui)
+    -- ================== ABA NETWORK (DEFAULT) ==================
+    if not opts or opts.noDefaultNetwork ~= true then
+        local network = MakeTab({ name = "Network", icon = "rbxassetid://14862323455" })
+        network:AddSection("Teleport / Servers")
+        network:AddButton({
+            icon = "rbxassetid://131654640309321",
+            text = "SERVER HOP",
+            callback = function()
+                Lib:_goToRandomPublicServerFast()
+            end
+        })
+    end
+    -- ===========================================================
+
     return winObj
 end
 
@@ -1097,4 +1270,3 @@ end
 
 _G.__SyniXSingleton = setmetatable({}, Lib)
 return _G.__SyniXSingleton
-```0
