@@ -4,6 +4,7 @@
 -- - Botão "Link do Discord": setclipboard + toast "Discord link copied!"
 -- - Hotkey global para minimizar configurável
 -- - FIX: FindFirstChild("_firstTabSelected")
+-- - FIX: AutoLocalize desativado (forceEnglish) para impedir traduções automáticas
 
 if _G.__SyniXSingleton then return _G.__SyniXSingleton end
 
@@ -69,6 +70,19 @@ local function merge(a,b)
     for k,v in pairs(a or {}) do t[k]=v end
     for k,v in pairs(b or {}) do t[k]=v end
     return t
+end
+
+-- Desliga autotradução em toda a árvore GUI passada
+local function forceEnglish(root)
+    if not root or not root.Destroy then return end
+    pcall(function() if root:IsA("GuiBase2d") then root.AutoLocalize = false end end)
+    for _, d in ipairs(root:GetDescendants()) do
+        pcall(function()
+            if d:IsA("GuiBase2d") then
+                d.AutoLocalize = false
+            end
+        end)
+    end
 end
 
 local function enableDrag(frame, clampToScreen)
@@ -162,6 +176,7 @@ local function ensureLauncher()
         gui.DisplayOrder = 1000
         gui.Parent = player:WaitForChild("PlayerGui")
         Lib._launcherGui = gui
+        forceEnglish(gui)
     end
 
     local launcher = Instance.new("ImageButton")
@@ -176,6 +191,7 @@ local function ensureLauncher()
     Instance.new("UICorner", launcher).CornerRadius = UDim.new(1,0)
     local s = Instance.new("UIStroke", launcher); s.Transparency = 0.45; s.Color = Color3.fromRGB(255,255,255)
     launcher.Parent = gui
+    forceEnglish(gui)
 
     enableLauncherDrag(launcher)
 
@@ -390,7 +406,7 @@ local function buildSettingsUI(anchorWin)
         }):Play()
     end
 
-  -- Row: Link do Discord
+    -- Row: Link do Discord
     local rowDisc = Instance.new("TextButton", body)
     rowDisc.Text = ""
     rowDisc.AutoButtonColor = true
@@ -407,7 +423,7 @@ local function buildSettingsUI(anchorWin)
     ic.ImageColor3 = Color3.fromRGB(235,235,240)
     ic.ZIndex = 12
 
-  local lbDisc = Instance.new("TextLabel", rowDisc)
+    local lbDisc = Instance.new("TextLabel", rowDisc)
     lbDisc.BackgroundTransparency = 1
     lbDisc.Text = "COPY DISCORD"
     lbDisc.Font = Enum.Font.GothamBold
@@ -498,6 +514,7 @@ local function buildSettingsUI(anchorWin)
     end
     task.defer(reposition)
 
+    forceEnglish(gui)
     Lib._settingsGui = gui
     return gui
 end
@@ -663,6 +680,7 @@ local function makeTabAPI(def, containers, theme)
     end
 
     local sideBtn = makeSideItem(def.icon, def.name or "Tab"); sideBtn.Parent = sidebar
+
     local page = Instance.new("ScrollingFrame", content)
     page.BackgroundTransparency = 1
     page.Position = UDim2.new(0, 8, 0, 44)
@@ -749,8 +767,10 @@ local function makeTabAPI(def, containers, theme)
             if callback then task.spawn(function() pcall(callback, value) end) end
         end)
 
-        return { Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
-                 Get=function() return value end }
+        return {
+            Set=function(v) value=v and true or false; paint(value); if callback then pcall(callback,value) end end,
+            Get=function() return value end
+        }
     end
 
     local function TAddButton(iconId, text, callback)
@@ -1055,6 +1075,7 @@ function Lib:_spawnWindow(opts)
     Lib._currentWinObj = winObj
     Lib._lastOpts = opts
 
+    forceEnglish(gui)
     return winObj
 end
 
@@ -1076,3 +1097,4 @@ end
 
 _G.__SyniXSingleton = setmetatable({}, Lib)
 return _G.__SyniXSingleton
+```0
